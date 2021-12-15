@@ -3,8 +3,11 @@ import torch
 import os
 from torch.autograd import Variable
 from util.image_pool import ImagePool
+from util.spectro_img import compute_visuals
 from .base_model import BaseModel
 from . import networks
+from .mdct import MDCT
+import torchaudio.functional as aF
 
 class Pix2PixHDModel(BaseModel):
     def name(self):
@@ -107,8 +110,43 @@ class Pix2PixHDModel(BaseModel):
             # optimizer D                        
             params = list(self.netD.parameters())    
             self.optimizer_D = torch.optim.Adam(params, lr=opt.lr, betas=(opt.beta1, 0.999))
+    
+    def mdct(self, audio, mask=False):
+        _mdct = MDCT(torch.kaiser_window(self.opt.win_length).cuda(), step_length=self.opt.hop_length, n_fft=self.opt.n_fft, center=self.opt.center, device = 'cuda').cuda()
+        audio = _mdct(audio.cuda()).unsqueeze(1)
+        log_audio = aF.amplitude_to_DB(
+            (torch.abs(audio)+1e-7),20,1e-7,1
+            ).cuda()
+        pha = torch.sign(audio).cuda()
+        mean = log_audio.mean()
+        std = torch.sqrt(log_audio.var())
+        log_audio = (log_audio-mean)/std
+        audio_max = torch.max(log_audio)
+        audio_min = torch.min(log_audio)
+        #log_audio = (log_audio)/(audio_max-audio_min)
+        log_audio = (log_audio)/(audio_max-audio_min)
+        #log_audio = log_audio*pha_audio
+        if mask:
+            size = log_audio.size()
+            up_ratio = self.opt.hr_sampling_rate / self.opt.lr_sampling_rate
+            _mask = torch.cat(
+            (
+                 torch.ones(size[0],
+                            size[1],
+                            int(size[2]/up_ratio),
+                            size[3]
+                            ),
+                torch.zeros(size[0],
+                            size[1],
+                            size[2]-int(size[2]/up_ratio),
+                            size[3]
+                            )
+            ),dim=2).cuda()
+            log_audio = log_audio*_mask
 
-    def encode_input(self, label_map, inst_map=None, real_image=None, feat_map=None, infer=False):             
+        return log_audio, pha, audio_max, audio_min, mean, std
+
+    def encode_input(self, label_map, inst_map=None, real_image=None, feat_map=None, infer=False):
         if self.opt.label_nc == 0:
             input_label = label_map.data.cuda()
         else:
@@ -124,20 +162,23 @@ class Pix2PixHDModel(BaseModel):
         if not self.opt.no_instance:
             inst_map = inst_map.data.cuda()
             edge_map = self.get_edges(inst_map)
-            input_label = torch.cat((input_label, edge_map), dim=1)         
-        input_label = Variable(input_label, volatile=infer)
+            input_label = torch.cat((input_label, edge_map), dim=1)  
+        label, lable_pha_feat, audio_max, audio_min, mean, std = self.mdct(input_label, True)
+        input_label = Variable(label, volatile=infer)
 
         # real images for training
         if real_image is not None:
-            real_image = Variable(real_image.data.cuda())
-
+            real, real_pha_feat, audio_max, audio_min, mean, std = self.mdct(real_image.data.cuda())
+            real_image = Variable(real.data.cuda())
+            
         # instance map for feature encoding
         if self.use_features:
             # get precomputed feature maps
             if self.opt.load_features:
                 feat_map = Variable(feat_map.data.cuda())
             if self.opt.label_feat:
-                inst_map = label_map.cuda()
+                #inst_map = label_map.cuda()
+                inst_map = real_pha_feat.cuda()
 
         return input_label, inst_map, real_image, feat_map
 
@@ -188,6 +229,11 @@ class Pix2PixHDModel(BaseModel):
         loss_G_VGG = 0
         if not self.opt.no_vgg_loss:
             loss_G_VGG = self.criterionVGG(fake_image, real_image) * self.opt.lambda_feat
+        
+        # Register current samples
+        self.current_lable     = input_label.detach().cpu().numpy()[0,0,:,:]
+        self.current_generated = fake_image.detach().cpu().numpy()[0,0,:,:]
+        self.current_real      = real_image.detach().cpu().numpy()[0,0,:,:]
         
         # Only return the fake_B image if necessary to save BW
         return [ self.loss_filter( loss_G_GAN, loss_G_GAN_Feat, loss_G_VGG, loss_D_real, loss_D_fake ), None if not infer else fake_image ]
@@ -295,6 +341,17 @@ class Pix2PixHDModel(BaseModel):
         if self.opt.verbose:
             print('update learning rate: %f -> %f' % (self.old_lr, lr))
         self.old_lr = lr
+
+    def get_current_visuals(self):
+        lable_sp,       lable_hist     = compute_visuals(self.current_lable)
+        generated_sp,   generated_hist = compute_visuals(self.current_generated)
+        real_sp,        real_hist      = compute_visuals(self.current_real)
+        return {'lable_spectro':        lable_sp,
+                'generated_spectro':    generated_sp,
+                'real_spectro':         real_sp,
+                'lable_hist':           lable_hist,
+                'generated_hist':       generated_hist,
+                'real_hist':            real_hist}
 
 class InferenceModel(Pix2PixHDModel):
     def forward(self, inp):

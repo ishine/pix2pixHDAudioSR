@@ -1,0 +1,1 @@
+python train.py --name 2048fft512bin_mdct --dataroot /root/VCTK-Corpus/wav48 --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 8 --continue_train 

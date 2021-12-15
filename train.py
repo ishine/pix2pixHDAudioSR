@@ -6,7 +6,8 @@ from torch.autograd import Variable
 from collections import OrderedDict
 from subprocess import call
 import fractions
-def lcm(a,b): return abs(a * b)/fractions.gcd(a,b) if a and b else 0
+import math
+def lcm(a,b): return abs(a * b)/math.gcd(a,b) if a and b else 0
 
 from options.train_options import TrainOptions
 from data.data_loader import CreateDataLoader
@@ -106,9 +107,7 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
 
         ### display output images
         if save_fake:
-            visuals = OrderedDict([('input_label', util.tensor2label(data['label'][0], opt.label_nc)),
-                                   ('synthesized_image', util.tensor2im(generated.data[0])),
-                                   ('real_image', util.tensor2im(data['image'][0]))])
+            visuals = model.module.get_current_visuals()
             visualizer.display_current_results(visuals, epoch, total_steps)
 
         ### save latest model

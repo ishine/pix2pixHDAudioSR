@@ -1,4 +1,5 @@
 from .base_options import BaseOptions
+from .audio_config import *
 
 class TrainOptions(BaseOptions):
     def initialize(self):
@@ -6,7 +7,7 @@ class TrainOptions(BaseOptions):
         # for displays
         self.parser.add_argument('--display_freq', type=int, default=100, help='frequency of showing training results on screen')
         self.parser.add_argument('--print_freq', type=int, default=100, help='frequency of showing training results on console')
-        self.parser.add_argument('--save_latest_freq', type=int, default=1000, help='frequency of saving the latest results')
+        self.parser.add_argument('--save_latest_freq', type=int, default=500, help='frequency of saving the latest results')
         self.parser.add_argument('--save_epoch_freq', type=int, default=10, help='frequency of saving checkpoints at the end of epochs')        
         self.parser.add_argument('--no_html', action='store_true', help='do not save intermediate training results to [opt.checkpoints_dir]/[opt.name]/web/')
         self.parser.add_argument('--debug', action='store_true', help='only do one epoch and displays at each iteration')
@@ -30,5 +31,12 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument('--no_vgg_loss', action='store_true', help='if specified, do *not* use VGG feature matching loss')        
         self.parser.add_argument('--no_lsgan', action='store_true', help='do *not* use least square GAN, if false, use vanilla GAN')
         self.parser.add_argument('--pool_size', type=int, default=0, help='the size of image buffer that stores previously generated images')
-
+        # STFT params
+        self.parser.add_argument('--lr_sampling_rate', type=int, default=LR_SAMPLE_RATE, help='low resolution sampling rate')
+        self.parser.add_argument('--hr_sampling_rate', type=int, default=HR_SAMPLE_RATE, help='high resolution sampling rate')
+        self.parser.add_argument('--segment_length', type=int, default=FRAME_LENGTH, help='audio segment length')
+        self.parser.add_argument('--n_fft', type=int, default=N_FFT, help='num of FFT points')
+        self.parser.add_argument('--hop_length', type=int, default=HOP_LENGTH, help='sliding window increament')
+        self.parser.add_argument('--win_length', type=int, default=WIN_LENGTH, help='sliding window width')
+        self.parser.add_argument('--center', action='store_true', help='centered FFT')
         self.isTrain = True

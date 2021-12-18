@@ -285,6 +285,9 @@ class Pix2PixHDModel(BaseModel):
         self.current_lable     = lr_spectro.detach().cpu().numpy()[0,0,:,:]
         self.current_generated = sr_result.detach().cpu().numpy()[0,0,:,:]
         self.current_real      = hr_spectro.detach().cpu().numpy()[0,0,:,:]
+        self.current_lable_pha     = lr_pha.detach().cpu().numpy()[0,0,:,:]
+        self.current_generated_pha = torch.sign(sr_result).detach().cpu().numpy()[0,0,:,:] if self.opt.explicit_encoding else sr_result.detach().cpu().numpy()[0,1,:,:]
+        self.current_real_pha      = hr_pha.detach().cpu().numpy()[0,0,:,:]
 
         # Only return the fake_B image if necessary to save BW
         return [ self.loss_filter( loss_G_GAN, loss_G_GAN_Feat, loss_G_VGG, loss_D_real, loss_D_fake ), None if not infer else sr_result ]
@@ -394,15 +397,22 @@ class Pix2PixHDModel(BaseModel):
         self.old_lr = lr
 
     def get_current_visuals(self):
-        lable_sp,       lable_hist     = compute_visuals(self.current_lable, abs=self.opt.explicit_encoding)
-        generated_sp,   generated_hist = compute_visuals(self.current_generated, abs=self.opt.explicit_encoding)
-        real_sp,        real_hist      = compute_visuals(self.current_real, abs=self.opt.explicit_encoding)
+        lable_sp, lable_hist = compute_visuals(self.current_lable, abs=self.opt.explicit_encoding)
+        lable_pha = compute_visuals(self.current_lable_pha)
+        generated_sp, generated_hist = compute_visuals(self.current_generated, abs=self.opt.explicit_encoding)
+        generated_pha = compute_visuals(self.current_generated_pha)
+        real_sp, real_hist = compute_visuals(self.current_real, abs=self.opt.explicit_encoding)
+        real_pha = compute_visuals(self.current_real_pha)
+
         return {'lable_spectro':        lable_sp,
                 'generated_spectro':    generated_sp,
                 'real_spectro':         real_sp,
                 'lable_hist':           lable_hist,
                 'generated_hist':       generated_hist,
-                'real_hist':            real_hist}
+                'real_hist':            real_hist,
+                'lable_pha':            lable_pha,
+                'generated_pha':        generated_pha,
+                'real_pha':             real_pha}
 
 class InferenceModel(Pix2PixHDModel):
     def forward(self, inp):

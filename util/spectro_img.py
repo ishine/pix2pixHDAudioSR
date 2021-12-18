@@ -6,9 +6,9 @@ def fig2img(fig):
     fig.canvas.draw()
     return np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8).reshape(fig.canvas.get_width_height()[::-1] + (3,))
 
-def compute_visuals(sp):
+def compute_visuals(sp, abs=False):
     sp_fig, sp_ax = plt.subplots()
-    sp_ax.pcolormesh(sp, cmap='PuBu_r')
+    sp_ax.pcolormesh(sp if not abs else sp.abs(), cmap='PuBu_r')
     sp_spectro = fig2img(sp_fig)
 
     sp_hist_fig, sp_hist_ax = plt.subplots()

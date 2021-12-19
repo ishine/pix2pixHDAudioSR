@@ -13,10 +13,10 @@ class Pix2PixHDModel(BaseModel):
     def name(self):
         return 'Pix2PixHDModel'
 
-    def init_loss_filter(self, use_gan_feat_loss, use_vgg_loss):
-        flags = (True, use_gan_feat_loss, use_vgg_loss, True, True)
-        def loss_filter(g_gan, g_gan_feat, g_vgg, d_real, d_fake):
-            return [l for (l,f) in zip((g_gan,g_gan_feat,g_vgg,d_real,d_fake),flags) if f]
+    def init_loss_filter(self, use_gan_feat_loss, use_vgg_loss, use_pha_loss):
+        flags = (True, use_gan_feat_loss, use_vgg_loss, use_pha_loss, True, True)
+        def loss_filter(g_gan, g_gan_feat, g_vgg, g_pha, d_real, d_fake):
+            return [l for (l,f) in zip((g_gan,g_gan_feat,g_vgg,g_pha,d_real,d_fake),flags) if f]
         return loss_filter
 
     def initialize(self, opt):
@@ -72,7 +72,7 @@ class Pix2PixHDModel(BaseModel):
             self.old_lr = opt.lr
 
             # define loss functions
-            self.loss_filter = self.init_loss_filter(not opt.no_ganFeat_loss, not opt.no_vgg_loss)
+            self.loss_filter = self.init_loss_filter(not opt.no_ganFeat_loss, not opt.no_vgg_loss, opt.use_pha_loss)
 
             self.criterionGAN = networks.GANLoss(use_lsgan=not opt.no_lsgan, tensor=self.Tensor)
             self.criterionFeat = torch.nn.L1Loss()
@@ -81,7 +81,7 @@ class Pix2PixHDModel(BaseModel):
 
 
             # Names so we can breakout loss
-            self.loss_names = self.loss_filter('G_GAN','G_GAN_Feat','G_VGG','D_real', 'D_fake')
+            self.loss_names = self.loss_filter('G_GAN','G_GAN_Feat','G_VGG','G_pha','D_real', 'D_fake')
 
             # initialize optimizers
             # optimizer G
@@ -111,7 +111,7 @@ class Pix2PixHDModel(BaseModel):
             params = list(self.netD.parameters())
             self.optimizer_D = torch.optim.Adam(params, lr=opt.lr, betas=(opt.beta1, 0.999))
 
-    def mdct(self, audio, min_value=1e-7, mask=False, norm_param=None, mask_mode=None, explicit_encoding=False):
+    def mdct(self, audio, min_value=1e-7, mask=False, norm_param=None, mask_mode=None, explicit_encoding=False, phase_encoding_mode=None):
         _mdct = MDCT(torch.kaiser_window(self.opt.win_length).cuda(), step_length=self.opt.hop_length, n_fft=self.opt.n_fft, center=self.opt.center, device = 'cuda').cuda()
         audio = _mdct(audio.cuda()).unsqueeze(1)
         log_audio = aF.amplitude_to_DB(
@@ -136,15 +136,28 @@ class Pix2PixHDModel(BaseModel):
             audio_min = norm_param['min']
 
         if explicit_encoding:
+            # multiply phase with log magnitude
             log_audio = (log_audio-audio_min)/(audio_max-audio_min)
             # log_audio @ [0,1]
             log_audio = log_audio*pha
             # log_audio @ [-1,1], double peak
-        else:
+        else:   #TODO
+            if   phase_encoding_mode == 'uni_dist':
+                pha = pha*torch.rand(pha.size()).cuda()
+            elif phase_encoding_mode == 'norm_dist':
+                noise = torch.randn(pha.size())
+                _noise = torch.randn(pha.size()).cuda()
+                _noise_min = _noise.min()
+                _noise_max = _noise.max()
+                _noise = (_noise - _noise_min)/(_noise_max - _noise_min)
+                pha = pha*_noise
+            elif phase_encoding_mode == 'scale':
+                pha = pha*0.5
             log_audio = log_audio/(audio_max-audio_min)
             # log_audio @ [-1,1], singal peak
 
         if mask:
+            # mask the lr spectro so that it does not learn from garbage infomation
             size = log_audio.size()
             up_ratio = self.opt.hr_sampling_rate / self.opt.lr_sampling_rate
             mask_size = int(size[2]/up_ratio)
@@ -164,6 +177,7 @@ class Pix2PixHDModel(BaseModel):
             log_audio = log_audio * _mask
 
             if mask_mode is not None:
+                # fill the blank mask with noise
                 _noise = torch.randn(size[0], size[1], size[2]-mask_size, size[3]).cuda()
                 _noise_min = _noise.min()
                 _noise_max = _noise.max()
@@ -196,10 +210,10 @@ class Pix2PixHDModel(BaseModel):
     def encode_input(self, lr_audio, inst_map=None, hr_audio=None, feat_map=None, infer=False):
         # real images for training
         if hr_audio is not None:
-            hr_spectro, hr_pha, norm_param = self.mdct(hr_audio.data.cuda(), mask = False, norm_param=None, min_value=self.opt.min_value, mask_mode=None, explicit_encoding=self.opt.explicit_encoding)
+            hr_spectro, hr_pha, norm_param = self.mdct(hr_audio.data.cuda(), mask = False, norm_param=None, min_value=self.opt.min_value, mask_mode=None, explicit_encoding=self.opt.explicit_encoding, phase_encoding_mode=self.opt.phase_encoding_mode)
             hr_spectro = Variable(hr_spectro.data.cuda())
 
-        lr_spectro, lr_pha, _norm_param = self.mdct(lr_audio, mask = self.opt.mask, norm_param=norm_param, min_value=self.opt.min_value, mask_mode=self.opt.mask_mode, explicit_encoding=self.opt.explicit_encoding)
+        lr_spectro, lr_pha, _norm_param = self.mdct(lr_audio, mask = self.opt.mask, norm_param=norm_param, min_value=self.opt.min_value, mask_mode=self.opt.mask_mode, explicit_encoding=self.opt.explicit_encoding, phase_encoding_mode=self.opt.phase_encoding_mode)
         lr_spectro = lr_spectro.data.cuda()
 
         """ if self.opt.label_nc == 0:
@@ -242,12 +256,16 @@ class Pix2PixHDModel(BaseModel):
     def forward(self, lr_audio, inst, hr_audio, feat, infer=False):
         # Encode Inputs
         lr_spectro, lr_pha, hr_spectro, hr_pha, feat_map, inst_map = self.encode_input(lr_audio, inst, hr_audio, feat)
-
+        if not self.opt.explicit_encoding:
+            lr_spectro = torch.cat((lr_spectro, lr_pha), dim=1)
+            hr_spectro = torch.cat((hr_spectro, hr_pha), dim=1)
         # Fake Generation
         if self.use_features:
             if not self.opt.load_features:
                 # for training
-                feat_map = self.netE.forward(hr_spectro, inst_map)
+                # todo: implement multiple encoding method
+                # use lr_pha temporaily. It will be replaced by inst_map for general propose
+                feat_map = self.netE.forward(hr_spectro, lr_pha)
             # when inferrencing, it will select one from kmeans
             input_concat = torch.cat((lr_spectro, feat_map), dim=1)
         else:
@@ -281,16 +299,24 @@ class Pix2PixHDModel(BaseModel):
         """ if not self.opt.no_vgg_loss:
             loss_G_VGG = self.criterionVGG(sr_result, hr_spectro) * self.opt.lambda_feat """
 
+        # Phase matching loss
+        # If all phase are generated correctly, loss_G_pha will be 0
+        # If using STFT instead of MDCT, a cosine function can be used for evaluating the phase distance
+        sr_pha = torch.sign(sr_result)[:,0,:,:].unsqueeze(1) if self.opt.explicit_encoding else sr_result[:,1,:,:].unsqueeze(1)
+        loss_G_pha = 0
+        if self.opt.use_pha_loss:
+            loss_G_pha = (1-torch.cos(0.5*torch.pi*(sr_pha-hr_pha))).mean()
+
         # Register current samples
         self.current_lable     = lr_spectro.detach().cpu().numpy()[0,0,:,:]
         self.current_generated = sr_result.detach().cpu().numpy()[0,0,:,:]
         self.current_real      = hr_spectro.detach().cpu().numpy()[0,0,:,:]
-        self.current_lable_pha     = lr_pha.detach().cpu().numpy()[0,0,:,:]
-        self.current_generated_pha = torch.sign(sr_result).detach().cpu().numpy()[0,0,:,:] if self.opt.explicit_encoding else sr_result.detach().cpu().numpy()[0,1,:,:]
-        self.current_real_pha      = hr_pha.detach().cpu().numpy()[0,0,:,:]
+        self.current_lable_pha     = torch.sign(lr_pha).detach().cpu().numpy()[0,0,:,:]
+        self.current_generated_pha = torch.sign(sr_pha).detach().cpu().numpy()[0,0,:,:]
+        self.current_real_pha      = torch.sign(hr_pha).detach().cpu().numpy()[0,0,:,:]
 
         # Only return the fake_B image if necessary to save BW
-        return [ self.loss_filter( loss_G_GAN, loss_G_GAN_Feat, loss_G_VGG, loss_D_real, loss_D_fake ), None if not infer else sr_result ]
+        return [ self.loss_filter( loss_G_GAN, loss_G_GAN_Feat, loss_G_VGG, loss_G_pha, loss_D_real, loss_D_fake ), None if not infer else sr_result ]
 
     def inference(self, label, inst, image=None):
         # Encode Inputs
@@ -397,12 +423,12 @@ class Pix2PixHDModel(BaseModel):
         self.old_lr = lr
 
     def get_current_visuals(self):
-        lable_sp, lable_hist = compute_visuals(self.current_lable, abs=self.opt.explicit_encoding)
-        lable_pha = compute_visuals(self.current_lable_pha)
-        generated_sp, generated_hist = compute_visuals(self.current_generated, abs=self.opt.explicit_encoding)
-        generated_pha = compute_visuals(self.current_generated_pha)
-        real_sp, real_hist = compute_visuals(self.current_real, abs=self.opt.explicit_encoding)
-        real_pha = compute_visuals(self.current_real_pha)
+        lable_sp, lable_hist, _ = compute_visuals(sp=self.current_lable, abs=self.opt.explicit_encoding)
+        _, _, lable_pha = compute_visuals(pha=self.current_lable_pha)
+        generated_sp, generated_hist, _ = compute_visuals(sp=self.current_generated, abs=self.opt.explicit_encoding)
+        _, _, generated_pha = compute_visuals(pha=self.current_generated_pha)
+        real_sp, real_hist, _ = compute_visuals(sp=self.current_real, abs=self.opt.explicit_encoding)
+        _, _, real_pha = compute_visuals(pha=self.current_real_pha)
 
         return {'lable_spectro':        lable_sp,
                 'generated_spectro':    generated_sp,

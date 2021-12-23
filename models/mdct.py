@@ -172,7 +172,7 @@ class MDCT(torch.nn.Module):
         return x
 
 class IMDCT(torch.nn.Module):
-    def __init__(self, window_function, step_length=None, device='cpu',n_fft=2048, out_length = 48000):
+    def __init__(self, window_function, step_length=None, device='cpu',n_fft=2048, out_length = 48000, center=True):
         super().__init__()
         self.window_function = window_function
         self.step_length = step_length

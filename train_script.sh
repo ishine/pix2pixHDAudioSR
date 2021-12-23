@@ -6,4 +6,4 @@ python train.py --name mdct_implicit_phase_coding --dataroot /root/VCTK-Corpus/w
 
 python train.py --name mdct_implicit_phase_coding_mask0 --dataroot /root/VCTK-Corpus/wav48 --no_instance --no_vgg_loss --label_nc 0 --output_nc 2 --input_nc 2 --batchSize 10 --gpu_id 3 --nThreads 0 --mask --mask_mode mode0 --instance_feat --feat_num 1
 
-python train.py --name mdct_implicit_phase_coding_mask0_normphasesoft --dataroot /root/VCTK-Corpus/wav48 --no_instance --no_vgg_loss --label_nc 0 --output_nc 2 --input_nc 2 --batchSize 10 --gpu_id 0 --nThreads 0 --mask --mask_mode mode0 --instance_feat --feat_num 1 --phase_encoding_mode norm_dist
+python train.py --name mdct_nophase2 --dataroot /root/VCTK-Corpus/wav48 --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 16 --gpu_id 1 --nThreads 0 --mask --mask_mode mode2

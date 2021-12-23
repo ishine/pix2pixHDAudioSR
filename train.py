@@ -60,7 +60,7 @@ def signal_handler(signal, frame):
     print('You pressed Ctrl+C!')
     global end
     end = True
-
+signal.signal(signal.SIGINT, signal_handler)
 for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
     epoch_start_time = time.time()
     if epoch != start_epoch:
@@ -81,8 +81,7 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         save_fake = total_steps % opt.display_freq == display_delta
 
         ############## Forward Pass ######################
-        losses, generated = model(Variable(data['label']), Variable(data['inst']),
-            Variable(data['image']), Variable(data['feat']), infer=save_fake)
+        losses, generated = model(Variable(data['label']), Variable(data['inst']),Variable(data['image']), Variable(data['feat']), infer=save_fake)
 
         # sum per device losses
         losses = [ torch.mean(x) if not isinstance(x, int) else x for x in losses ]

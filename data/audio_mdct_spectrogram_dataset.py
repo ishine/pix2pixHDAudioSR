@@ -1,4 +1,5 @@
 import os
+import torch
 import torch.nn.functional as F
 import torchaudio
 import torchaudio.functional as aF
@@ -24,7 +25,7 @@ class AudioMDCTSpectrogramDataset(BaseDataset):
 
     def name(self):
         return 'AudioMDCTSpectrogramDataset'
-        
+
     def __getitem__(self, idx):
         file_path = self.audio_file[idx]
         try:
@@ -47,7 +48,7 @@ class AudioMDCTSpectrogramDataset(BaseDataset):
             for name in files:
                 if os.path.splitext(name)[1] == ".wav" or ".mp3":
                     file_list.append(os.path.join(root, name))
-                    
+
         print(len(file_list))
         return file_list
 
@@ -67,3 +68,46 @@ class AudioMDCTSpectrogramDataset(BaseDataset):
             ).data
 
         return hr_waveform, lr_waveform
+class AudioMDCTSpectrogramTestDataset(BaseDataset):
+    def __init__(self, opt) -> None:
+        BaseDataset.__init__(self)
+        self.lr_sampling_rate = opt.lr_sampling_rate
+        self.hr_sampling_rate = opt.hr_sampling_rate
+        self.segment_length = opt.segment_length
+        self.n_fft = opt.n_fft
+        self.hop_length = opt.hop_length
+        self.win_length = opt.win_length
+        self.center = opt.center
+        try:
+            self.raw_audio, self.in_sampling_rate = torchaudio.load(opt.dataroot)
+            self.audio_len = len(self.raw_audio)
+        except:
+            self.raw_audio = []
+            print("load audio failed")
+            exit(0)
+        if self.opt.is_lr_input == False:
+            self.raw_audio = aF.resample(waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.lr_sampling_rate)
+        self.raw_audio = aF.resample(waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.hr_sampling_rate)
+        self.seg_audio = self.seg_pad_audio(self.raw_audio)
+
+    def __len__(self):
+        return self.seg_audio.size(0)
+
+    def name(self):
+        return 'AudioMDCTSpectrogramTestDataset'
+
+    def __getitem__(self, idx):
+        return {'image': None, 'label': self.seg_audio[idx].squeeze(0), 'inst':None, 'feat':None, 'path': self.opt.dataroot}
+
+    def seg_pad_audio(self, audio):
+        audio = audio.squeeze(0)
+        length = len(audio)
+        if length >= self.segment_length:
+            num_segments = int(torch.ceil(length/self.segment_length))
+            audio = F.pad(audio, (0, self.segment_length*num_segments - length), "constant").data
+            audio = audio.unfold(dimension=0,size=self.segment_length,step=self.segment_length)
+        else:
+            audio = F.pad(audio, (0, self.segment_length - length), 'constant').data
+            audio = audio.unsqueeze(0)
+
+        return audio

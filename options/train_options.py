@@ -42,4 +42,5 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument('--hop_length', type=int, default=HOP_LENGTH, help='sliding window increament')
         self.parser.add_argument('--win_length', type=int, default=WIN_LENGTH, help='sliding window width')
         self.parser.add_argument('--center', action='store_true', help='centered FFT')
+        self.parser.add_argument('--is_lr_input', action='store_true', help='if specified, the audio generator will assert the input as low res. And it will only do upsampling.')
         self.isTrain = True

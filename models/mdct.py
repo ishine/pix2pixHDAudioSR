@@ -172,7 +172,7 @@ class MDCT(torch.nn.Module):
         return x
 
 class IMDCT(torch.nn.Module):
-    def __init__(self, window_function, step_length=None, device='cpu',n_fft=2048, out_length = 48000, center=True):
+    def __init__(self, window_function, step_length=None, device='cuda:0',n_fft=2048, out_length = 48000, center=True):
         super().__init__()
         self.window_function = window_function
         self.step_length = step_length
@@ -283,9 +283,9 @@ class IMDCT(torch.nn.Module):
                 #Y[N+1:] = -1 * torch.conj(X[-2:0:-1])
                 Y[N+1:] = -1 * torch.conj(X[:-2].flip(dims=(0,)))
 
-            pre_twiddle = torch.exp(1j * np.pi * n0 * torch.arange(N * 2) / N).to(self.device)
+            pre_twiddle = (torch.exp(1j * np.pi * n0 * torch.arange(N * 2) / N)).to(self.device)
 
-            y = torch.fft.ifft(Y * pre_twiddle)
+            y = torch.fft.ifft(Y.to(self.device) * pre_twiddle)
 
             return torch.real(y * post_twiddle) * np.sqrt(N)
 

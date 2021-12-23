@@ -43,3 +43,4 @@ test/data/legacy_serialized.pt
 *~
 .gitignore
 pix2pixhd.tar.gz
+*.wav

@@ -4,8 +4,12 @@ from data.base_data_loader import BaseDataLoader
 
 def CreateDataset(opt):
     dataset = None
-    from data.audio_mdct_spectrogram_dataset import AudioMDCTSpectrogramDataset
-    dataset = AudioMDCTSpectrogramDataset(opt)
+    if opt.phase == 'train':
+        from data.audio_mdct_spectrogram_dataset import AudioMDCTSpectrogramDataset
+        dataset = AudioMDCTSpectrogramDataset(opt)
+    elif opt.phase == 'test':
+        from data.audio_mdct_spectrogram_dataset import AudioMDCTSpectrogramTestDataset
+        dataset = AudioMDCTSpectrogramTestDataset(opt)
 
     print("dataset [%s] was created" % (dataset.name()))
     #dataset.initialize(opt)

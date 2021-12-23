@@ -44,7 +44,7 @@ def center_pad(data, frame_length):
 
 def center_unpad(data, frame_length):
     slicetuple = [slice(None)] * data.ndim
-    slicetuple[0] = slice(frame_length // 2, -frame_length // 2)
+    slicetuple[1] = slice(frame_length // 2, -frame_length // 2)
     return data[tuple(slicetuple)]
 
 def process(
@@ -417,7 +417,7 @@ def ispectrogram(
                 output = torch.zeros(
                     frame_length + (len(values) - 1) * step_length,
                     dtype=sig.dtype
-                )
+                ).cuda()
 
             output[i:i + frame_length] += sig
 
@@ -428,18 +428,19 @@ def ispectrogram(
     if data.ndim == 2:
         out = traf(data)
     elif data.ndim == 3:
-        for i in range(data.shape[2]):
-            tmp = traf(data[:, :, i])
+        for i in range(data.shape[0]):
+            tmp = traf(data[i ,:, :])
 
             if i == 0:
                 out = torch.empty(
-                    (tmp.shape + (data.shape[2],)), dtype=tmp.dtype
+                    ((data.shape[0],)+tmp.shape), dtype=tmp.dtype
                 )
-            out[:, i] = tmp
+            out[i,:] = tmp
     else:
         raise ValueError("ispectrogram: Only 2D or 3D input data allowed")
 
     if centered:
+        print(out.size())
         out = center_unpad(out, frame_length)
 
     return unpad(out, out_length)

@@ -1,4 +1,5 @@
 import os
+from numpy import ceil
 import torch
 import torch.nn.functional as F
 import torchaudio
@@ -78,16 +79,17 @@ class AudioMDCTSpectrogramTestDataset(BaseDataset):
         self.hop_length = opt.hop_length
         self.win_length = opt.win_length
         self.center = opt.center
+        self.dataroot = opt.dataroot
         try:
-            self.raw_audio, self.in_sampling_rate = torchaudio.load(opt.dataroot)
+            self.raw_audio, self.in_sampling_rate = torchaudio.load(self.dataroot)
             self.audio_len = len(self.raw_audio)
         except:
             self.raw_audio = []
             print("load audio failed")
             exit(0)
-        if self.opt.is_lr_input == False:
+        if opt.is_lr_input == False:
             self.raw_audio = aF.resample(waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.lr_sampling_rate)
-        self.raw_audio = aF.resample(waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.hr_sampling_rate)
+        self.raw_audio = aF.resample(waveform=self.raw_audio, orig_freq=self.lr_sampling_rate, new_freq=self.hr_sampling_rate)
         self.seg_audio = self.seg_pad_audio(self.raw_audio)
 
     def __len__(self):
@@ -97,13 +99,13 @@ class AudioMDCTSpectrogramTestDataset(BaseDataset):
         return 'AudioMDCTSpectrogramTestDataset'
 
     def __getitem__(self, idx):
-        return {'image': None, 'label': self.seg_audio[idx].squeeze(0), 'inst':None, 'feat':None, 'path': self.opt.dataroot}
+        return {'image': torch.empty(1), 'label': self.seg_audio[idx,:].squeeze(0), 'inst':torch.empty(1), 'feat':torch.empty(1), 'path': self.dataroot}
 
     def seg_pad_audio(self, audio):
         audio = audio.squeeze(0)
         length = len(audio)
         if length >= self.segment_length:
-            num_segments = int(torch.ceil(length/self.segment_length))
+            num_segments = int(ceil(length/self.segment_length))
             audio = F.pad(audio, (0, self.segment_length*num_segments - length), "constant").data
             audio = audio.unfold(dimension=0,size=self.segment_length,step=self.segment_length)
         else:

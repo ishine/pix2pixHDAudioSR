@@ -161,6 +161,7 @@ class Pix2PixHDModel(BaseModel):
         if mask:
             # mask the lr spectro so that it does not learn from garbage infomation
             size = log_audio.size()
+            print(size)
             up_ratio = self.opt.hr_sampling_rate / self.opt.lr_sampling_rate
             mask_size = int(size[2]/up_ratio)
             _mask = torch.cat(
@@ -215,10 +216,14 @@ class Pix2PixHDModel(BaseModel):
     def encode_input(self, lr_audio, inst_map=None, hr_audio=None, feat_map=None, infer=False):
         # real images for training
         if hr_audio is not None:
-            hr_spectro, hr_pha, norm_param = self.mdct(hr_audio.data.cuda(), mask = False, norm_param=None, min_value=self.opt.min_value, mask_mode=None, explicit_encoding=self.opt.explicit_encoding, phase_encoding_mode=self.opt.phase_encoding_mode)
+            hr_spectro, hr_pha, hr_norm_param = self.mdct(hr_audio.data.cuda(), mask = False, norm_param=None, min_value=self.opt.min_value, mask_mode=None, explicit_encoding=self.opt.explicit_encoding, phase_encoding_mode=self.opt.phase_encoding_mode)
             hr_spectro = Variable(hr_spectro.data.cuda())
+        else:
+            hr_spectro = None
+            hr_pha = None
+            hr_norm_param = None
 
-        lr_spectro, lr_pha, _norm_param = self.mdct(lr_audio, mask = self.opt.mask, norm_param=None, min_value=self.opt.min_value, mask_mode=self.opt.mask_mode, explicit_encoding=self.opt.explicit_encoding, phase_encoding_mode=self.opt.phase_encoding_mode)
+        lr_spectro, lr_pha, lr_norm_param = self.mdct(lr_audio, mask = self.opt.mask, norm_param=None, min_value=self.opt.min_value, mask_mode=self.opt.mask_mode, explicit_encoding=self.opt.explicit_encoding, phase_encoding_mode=self.opt.phase_encoding_mode)
         lr_spectro = lr_spectro.data.cuda()
 
         """ if self.opt.label_nc == 0:
@@ -248,7 +253,7 @@ class Pix2PixHDModel(BaseModel):
                 #inst_map = label_map.cuda()
                 inst_map = lr_pha.cuda() """
 
-        return lr_spectro, lr_pha, hr_spectro, hr_pha, feat_map, inst_map, norm_param
+        return lr_spectro, lr_pha, hr_spectro, hr_pha, feat_map, inst_map, hr_norm_param, lr_norm_param
 
     def discriminate(self, input_label, test_image, use_pool=False):
         input_concat = torch.cat((input_label, test_image.detach()), dim=1)
@@ -260,7 +265,7 @@ class Pix2PixHDModel(BaseModel):
 
     def forward(self, lr_audio, inst, hr_audio, feat, infer=False):
         # Encode Inputs
-        lr_spectro, lr_pha, hr_spectro, hr_pha, feat_map, inst_map, norm_param = self.encode_input(lr_audio, inst, hr_audio, feat)
+        lr_spectro, lr_pha, hr_spectro, hr_pha, feat_map, inst_map, hr_norm_param, lr_norm_param = self.encode_input(lr_audio, inst, hr_audio, feat)
         if not self.opt.explicit_encoding and self.opt.input_nc>=2:
             lr_spectro = torch.cat((lr_spectro, lr_pha), dim=1)
             hr_spectro = torch.cat((hr_spectro, hr_pha), dim=1)
@@ -329,10 +334,11 @@ class Pix2PixHDModel(BaseModel):
         # Only return the fake_B image if necessary to save BW
         return [ self.loss_filter( loss_G_GAN, loss_G_GAN_Feat, loss_G_VGG, loss_G_pha, loss_D_real, loss_D_fake ), None if not infer else sr_result ]
 
-    def inference(self, lr_audio, inst, hr_audio=None):
+    def inference(self, lr_audio, inst):
         # Encode Inputs
-        hr_audio = Variable(hr_audio) if hr_audio is not None else None
-        lr_spectro, lr_pha, hr_spectro, hr_pha, feat_map, inst_map, norm_param  = self.encode_input(Variable(lr_audio), Variable(inst), hr_audio, infer=True)
+        inst = Variable(inst) if inst is not None else None
+        lr_audio = Variable(lr_audio)
+        lr_spectro, lr_pha, hr_spectro, hr_pha, feat_map, inst_map,hr_norm_param, lr_norm_param = self.encode_input(lr_audio, inst, None, infer=True)
 
         # Fake Generation
         if self.use_features:
@@ -351,7 +357,7 @@ class Pix2PixHDModel(BaseModel):
                 hr_spectro = self.netG.forward(input_concat)
         else:
             hr_spectro = self.netG.forward(input_concat)
-        return hr_spectro, lr_pha, norm_param
+        return hr_spectro, lr_pha, lr_norm_param
 
     def sample_features(self, inst):
         # read precomputed feature clusters

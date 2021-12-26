@@ -6,7 +6,7 @@ from util.image_pool import ImagePool
 from util.spectro_img import compute_visuals
 from .base_model import BaseModel
 from . import networks
-from .mdct import MDCT
+from .mdct import MDCT2
 import torchaudio.functional as aF
 
 class Pix2PixHDModel(BaseModel):
@@ -27,7 +27,8 @@ class Pix2PixHDModel(BaseModel):
         self.use_features = opt.instance_feat or opt.label_feat
         self.gen_features = self.use_features and not self.opt.load_features
         input_nc = opt.label_nc if opt.label_nc != 0 else opt.input_nc
-
+        #self._mdct = MDCT(torch.kaiser_window(self.opt.win_length).cuda(), step_length=self.opt.hop_length, n_fft=self.opt.n_fft, center=self.opt.center, device = 'cuda').cuda()
+        self._mdct = MDCT2(n_fft=self.opt.n_fft/2, hop_length=self.opt.hop_length, win_length=self.opt.win_length, window=torch.kaiser_window(self.opt.win_length).cuda()).cuda()
         ##### define networks
         # Generator network
         netG_input_nc = input_nc
@@ -112,8 +113,7 @@ class Pix2PixHDModel(BaseModel):
             self.optimizer_D = torch.optim.Adam(params, lr=opt.lr, betas=(opt.beta1, 0.999))
 
     def mdct(self, audio, min_value=1e-7, mask=False, norm_param=None, mask_mode=None, explicit_encoding=False, phase_encoding_mode=None):
-        _mdct = MDCT(torch.kaiser_window(self.opt.win_length).cuda(), step_length=self.opt.hop_length, n_fft=self.opt.n_fft, center=self.opt.center, device = 'cuda').cuda()
-        audio = _mdct(audio.cuda()).unsqueeze(1)
+        audio = self._mdct(audio.cuda()).unsqueeze(1)
         log_audio = aF.amplitude_to_DB(
             (audio.abs() + min_value),20,min_value,1
             ).cuda()

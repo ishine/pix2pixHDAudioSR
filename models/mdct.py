@@ -342,3 +342,50 @@ class IMDCT(torch.nn.Module):
     def forward(self, X):
         X = self.imdct(X=X, window_function=self.window_function, step_length=self.step_length, n_fft=self.n_fft, padding = 0, out_length = self.out_length)
         return X
+
+from torch import nn
+from torch.nn.functional import pad
+from dct.dct_lee import DCT
+class MDCT2(nn.Module):
+    def __init__(self, n_fft=2048, hop_length=None, win_length=None, window=None, center=True, pad_mode='constant', device='cuda') -> None:
+        super(MDCT,self).__init__()
+        self.n_fft = n_fft
+        self.pad_mode = pad_mode
+        self.device = device
+        self.hop_length = hop_length
+        self.center = center
+
+        # making window
+        if callable(window):
+            self.window = window(win_length).to(self.device)
+            self.win_length = win_length
+        else:
+            self.window = window.to(self.device)
+            self.win_length = len(window)
+
+        assert self.win_length <= self.n_fft, 'Window lenth should be no more than fft length'
+        assert self.hop_length <= self.win_length, 'You hopped more than one frame'
+
+        self.dct = DCT()
+
+    def forward(self, signal):
+        signal = signal.to(self.device)
+        if self.center:
+            # Pad the signal on both sides so that the t-th frame is centered at time t * hop_length. Otherwise, the t-th frame begins at time t * hop_length.
+            signal = pad(signal, (self.win_length//2, self.win_length//2), mode=self.pad_mode)
+        # Pad the signal to a proper length
+        signal_len = int(len(signal))
+        #print(signal_len)
+        if (signal_len-self.win_length)%self.hop_length:
+            out_len = int(torch.ceil(torch.tensor([(signal_len-self.win_length)/self.hop_length])).item() * self.hop_length + self.win_length)
+        else:
+            out_len = signal_len
+        #print(out_len)
+        signal = pad(signal, (0,out_len-signal_len), mode=self.pad_mode)
+        # Slice the signal with overlapping
+        #print(signal.size())
+        signal = signal.unfold(dimension=-1, size=self.win_length, step=self.hop_length)
+        #print(signal.size())
+        # Apply windows to each pieces
+        signal = torch.mul(signal, self.window)
+        return self.dct(signal)

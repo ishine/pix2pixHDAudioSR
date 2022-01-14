@@ -1,5 +1,6 @@
+import csv
 import os
-from numpy import ceil
+from numpy import ceil, concatenate
 import torch
 import torch.nn.functional as F
 import torchaudio
@@ -31,9 +32,15 @@ class AudioMDCTSpectrogramDataset(BaseDataset):
         file_path = self.audio_file[idx]
         try:
             waveform, orig_sample_rate = torchaudio.load(file_path)
-        except:
-            waveform = []
-            print("load audio failed")
+        except: #try next until success
+            i = 1
+            while 1:
+                file_path = self.audio_file[idx+i]
+                try:
+                    waveform, orig_sample_rate = torchaudio.load(file_path)
+                    break
+                except:
+                    i += 1
 
         hr_waveform = aF.resample(waveform=waveform, orig_freq=orig_sample_rate, new_freq=self.hr_sampling_rate)
         lr_waveform = aF.resample(waveform=waveform, orig_freq=orig_sample_rate, new_freq=self.lr_sampling_rate)
@@ -44,12 +51,18 @@ class AudioMDCTSpectrogramDataset(BaseDataset):
 
 
     def get_files(self, file_path):
-        file_list = []
-        for root, dirs, files in os.walk(file_path, topdown=False):
-            for name in files:
-                if os.path.splitext(name)[1] == ".wav" or ".mp3":
-                    file_list.append(os.path.join(root, name))
-
+        if os.path.isdir(file_path):
+            file_list = []
+            for root, dirs, files in os.walk(file_path, topdown=False):
+                for name in files:
+                    if os.path.splitext(name)[1] == ".wav" or ".mp3":
+                        file_list.append(os.path.join(root, name))
+        else:
+            root, csv_file = os.path.split(file_path)
+            with open(file_path, 'r') as csv_file:
+                csv_reader = csv.reader(csv_file)
+                file_list = sum(list(csv_reader), []) # flatten the list using sum()
+            file_list = [os.path.join(root, x) for x in file_list]
         print(len(file_list))
         return file_list
 

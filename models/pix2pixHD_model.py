@@ -113,7 +113,7 @@ class Pix2PixHDModel(BaseModel):
             self.optimizer_D = torch.optim.Adam(params, lr=opt.lr, betas=(opt.beta1, 0.999))
 
     def mdct(self, audio, min_value=1e-7, mask=False, norm_param=None, mask_mode=None, explicit_encoding=False, phase_encoding_mode=None):
-        audio = self._mdct(audio.cuda()).unsqueeze(1)
+        audio = self._mdct(audio.cuda()).unsqueeze(1).permute(0,1,3,2)
         log_audio = aF.amplitude_to_DB(
             (audio.abs() + min_value),20,min_value,1
             ).cuda()

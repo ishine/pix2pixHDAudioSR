@@ -28,7 +28,7 @@ class Pix2PixHDModel(BaseModel):
         self.gen_features = self.use_features and not self.opt.load_features
         input_nc = opt.label_nc if opt.label_nc != 0 else opt.input_nc
         #self._mdct = MDCT(torch.kaiser_window(self.opt.win_length).cuda(), step_length=self.opt.hop_length, n_fft=self.opt.n_fft, center=self.opt.center, device = 'cuda').cuda()
-        self._mdct = MDCT2(n_fft=self.opt.n_fft/2, hop_length=self.opt.hop_length, win_length=self.opt.win_length, window=torch.kaiser_window(self.opt.win_length).cuda()).cuda()
+        self._mdct = MDCT2(n_fft=self.opt.n_fft/2, hop_length=self.opt.hop_length, win_length=self.opt.win_length/2, window=torch.kaiser_window).cuda()
         ##### define networks
         # Generator network
         netG_input_nc = input_nc
@@ -161,7 +161,7 @@ class Pix2PixHDModel(BaseModel):
         if mask:
             # mask the lr spectro so that it does not learn from garbage infomation
             size = log_audio.size()
-            print(size)
+            #print(size)
             up_ratio = self.opt.hr_sampling_rate / self.opt.lr_sampling_rate
             mask_size = int(size[2]/up_ratio)
             _mask = torch.cat(

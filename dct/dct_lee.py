@@ -7,8 +7,8 @@ import torch
 from torch.autograd import Function
 from torch import nn
 
-import dct_lee_cpp as dct_cpp
-import dct_lee_cuda as dct_cuda
+from . import dct_lee_cpp as dct_cpp
+from . import dct_lee_cuda as dct_cuda
 
 def dct(x, expk, buf, out):
     """compute discrete cosine transformation, DCT II

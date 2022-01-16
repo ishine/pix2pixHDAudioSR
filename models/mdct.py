@@ -345,10 +345,10 @@ class IMDCT(torch.nn.Module):
 
 from torch import nn
 from torch.nn.functional import pad
-from dct.dct_lee import DCT
+from dct.dct import DCT
 class MDCT2(nn.Module):
     def __init__(self, n_fft=2048, hop_length=None, win_length=None, window=None, center=True, pad_mode='constant', device='cuda') -> None:
-        super(MDCT,self).__init__()
+        super().__init__()
         self.n_fft = n_fft
         self.pad_mode = pad_mode
         self.device = device
@@ -359,13 +359,13 @@ class MDCT2(nn.Module):
         if window is None:
             window = torch.ones
         if callable(window):
-            self.window = window(win_length).to(self.device)
-            self.win_length = win_length
+            self.win_length = int(win_length)
+            self.window = window(self.win_length).to(self.device)
         else:
             self.window = window.to(self.device)
             self.win_length = len(window)
 
-        assert self.win_length <= self.n_fft, 'Window lenth should be no more than fft length'
+        assert self.win_length <= self.n_fft, 'Window lenth %d should be no more than fft length %d'%(self.win_length, self.n_fft)
         assert self.hop_length <= self.win_length, 'You hopped more than one frame'
 
         self.dct = DCT()
@@ -389,5 +389,5 @@ class MDCT2(nn.Module):
         signal = signal.unfold(dimension=-1, size=self.win_length, step=self.hop_length)
         #print(signal.size())
         # Apply windows to each pieces
-        signal = torch.mul(signal, self.window)
+        signal = torch.mul(signal.to(self.device), self.window.to(self.device))
         return self.dct(signal)

@@ -3,9 +3,6 @@ import os
 import numpy as np
 import torch
 from torch.autograd import Variable
-from collections import OrderedDict
-from subprocess import call
-import fractions
 import math
 def lcm(a,b): return abs(a * b)/math.gcd(a,b) if a and b else 0
 

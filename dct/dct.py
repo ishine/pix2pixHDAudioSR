@@ -7,10 +7,10 @@ import torch
 from torch.autograd import Function
 from torch import nn
 
-import dct_cpp as dct_cpp
-import dct_cuda as dct_cuda
+from . import dct_cpp as dct_cpp
+from . import dct_cuda as dct_cuda
 
-import discrete_spectral_transform as discrete_spectral_transform
+from . import discrete_spectral_transform as discrete_spectral_transform
 
 def dct(x, expk, algorithm):
     """compute discrete cosine transformation, DCT II, using N-FFT or 2N-FFT

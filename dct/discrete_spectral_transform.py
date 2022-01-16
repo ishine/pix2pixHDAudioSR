@@ -6,7 +6,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-import torch_fft_api as torch_fft_api
+from . import torch_fft_api as torch_fft_api
 
 """ Discrete spectral transformation leveraging fast fourier transform engine.
 The math here mainly uses Prosthaphaeresis properties.

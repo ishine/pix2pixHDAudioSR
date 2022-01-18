@@ -13,7 +13,9 @@ import util.util as util
 from util.visualizer import Visualizer
 import debugpy
 debugpy.listen(("localhost", 5678))
-debugpy.wait_for_client()
+#debugpy.wait_for_client()
+os.environ['CUDA_VISIBLE_DEVICES']='0'
+os.environ['NCCL_P2P_DISABLE']='1'
 
 opt = TrainOptions().parse()
 iter_path = os.path.join(opt.checkpoints_dir, opt.name, 'iter.txt')

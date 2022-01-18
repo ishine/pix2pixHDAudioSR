@@ -11,6 +11,9 @@ from data.data_loader import CreateDataLoader
 from models.models import create_model
 import util.util as util
 from util.visualizer import Visualizer
+import debugpy
+debugpy.listen(("localhost", 5678))
+debugpy.wait_for_client()
 
 opt = TrainOptions().parse()
 iter_path = os.path.join(opt.checkpoints_dir, opt.name, 'iter.txt')

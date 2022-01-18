@@ -28,17 +28,26 @@ class AudioMDCTSpectrogramDataset(BaseDataset):
     def name(self):
         return 'AudioMDCTSpectrogramDataset'
 
+    def readaudio(self, file_path):
+        metadata = torchaudio.info(file_path)
+        max_audio_start = metadata.num_frames - self.segment_length
+        if max_audio_start > 0:
+            offset = random.randint(0, max_audio_start)
+            waveform, orig_sample_rate = torchaudio.load(file_path, frame_offset=offset, num_frames=self.segment_length)
+        else:
+            waveform, orig_sample_rate = torchaudio.load(file_path)
+        return waveform, orig_sample_rate
     def __getitem__(self, idx):
         file_path = self.audio_file[idx]
         try:
-            waveform, orig_sample_rate = torchaudio.load(file_path)
+            waveform, orig_sample_rate = self.readaudio(file_path)
         except: #try next until success
             print('Load failed!')
             i = 1
             while 1:
                 file_path = self.audio_file[idx+i]
                 try:
-                    waveform, orig_sample_rate = torchaudio.load(file_path)
+                    waveform, orig_sample_rate = self.readaudio(file_path)
                     break
                 except:
                     i += 1
@@ -47,9 +56,9 @@ class AudioMDCTSpectrogramDataset(BaseDataset):
         lr_waveform = aF.resample(waveform=waveform, orig_freq=orig_sample_rate, new_freq=self.lr_sampling_rate)
         lr_waveform = aF.resample(waveform=lr_waveform, orig_freq=self.lr_sampling_rate, new_freq=self.hr_sampling_rate)
         #lr_waveform = aF.lowpass_biquad(waveform, sample_rate=self.hr_sampling_rate, cutoff_freq = self.lr_sampling_rate//2) #Meet the Nyquest sampling theorem
-        hr, lr = self.seg_pad_audio(lr_waveform, hr_waveform)
+        hr = self.seg_pad_audio(hr_waveform)
+        lr = self.seg_pad_audio(lr_waveform)
         return {'image': hr.squeeze(0), 'label': lr.squeeze(0), 'inst':0, 'feat':0, 'path': file_path}
-
 
     def get_files(self, file_path):
         if os.path.isdir(file_path):
@@ -68,22 +77,14 @@ class AudioMDCTSpectrogramDataset(BaseDataset):
         print(len(file_list))
         return file_list
 
-    def seg_pad_audio(self, lr, hr):
-        length = min(hr.size(1),lr.size(1))
-        if length >= self.segment_length:
-            max_audio_start = length - self.segment_length
-            start = random.randint(0, max_audio_start)
-            lr_waveform = lr[0][start : start + self.segment_length]
-            hr_waveform = hr[0][start : start + self.segment_length]
+    def seg_pad_audio(self, waveform):
+        if waveform.size(1) >= self.segment_length:
+            waveform = waveform[0][:self.segment_length]
         else:
-            lr_waveform = F.pad(
-                lr, (0, self.segment_length - lr.size(1)), 'constant'
+            waveform = F.pad(
+                waveform, (0, self.segment_length - waveform.size(1)), 'constant'
             ).data
-            hr_waveform = F.pad(
-                hr, (0, self.segment_length - hr.size(1)), 'constant'
-            ).data
-
-        return hr_waveform, lr_waveform
+        return waveform
 class AudioMDCTSpectrogramTestDataset(BaseDataset):
     def __init__(self, opt) -> None:
         BaseDataset.__init__(self)

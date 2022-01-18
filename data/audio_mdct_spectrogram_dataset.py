@@ -33,6 +33,7 @@ class AudioMDCTSpectrogramDataset(BaseDataset):
         try:
             waveform, orig_sample_rate = torchaudio.load(file_path)
         except: #try next until success
+            print('Load failed!')
             i = 1
             while 1:
                 file_path = self.audio_file[idx+i]
@@ -52,17 +53,18 @@ class AudioMDCTSpectrogramDataset(BaseDataset):
 
     def get_files(self, file_path):
         if os.path.isdir(file_path):
+            print("Searching for audio file")
             file_list = []
             for root, dirs, files in os.walk(file_path, topdown=False):
                 for name in files:
-                    if os.path.splitext(name)[1] == ".wav" or ".mp3":
+                    if os.path.splitext(name)[1] == ".wav" or ".mp3" or ".flac":
                         file_list.append(os.path.join(root, name))
         else:
+            print("Using csv file list")
             root, csv_file = os.path.split(file_path)
             with open(file_path, 'r') as csv_file:
                 csv_reader = csv.reader(csv_file)
-                file_list = sum(list(csv_reader), []) # flatten the list using sum()
-            file_list = [os.path.join(root, x) for x in file_list]
+                file_list = [os.path.join(root, item) for sublist in list(csv_reader) for item in sublist]
         print(len(file_list))
         return file_list
 

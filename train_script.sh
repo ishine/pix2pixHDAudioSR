@@ -6,6 +6,6 @@ python train.py --name mdct_implicit_phase_coding --dataroot /root/VCTK-Corpus/w
 
 python train.py --name mdct_implicit_phase_coding_mask0 --dataroot /root/VCTK-Corpus/wav48 --no_instance --no_vgg_loss --label_nc 0 --output_nc 2 --input_nc 2 --batchSize 10 --gpu_id 3 --nThreads 0 --mask --mask_mode mode0 --instance_feat --feat_num 1
 
-python train.py --name mdct_pretrain --dataroot /root/audio_chuck/audio.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 32 --gpu_id 0,1 --nThreads 0 --mask --mask_mode mode2 --fp16
+python train.py --name mdct_pretrain --dataroot /home/neoncloud/openslr/LibriSpeech/files.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 6 --gpu_id 0 --nThreads 8 --mask --mask_mode mode2 --fp16
 
 python generate_audio.py --name mdct_nophase2 --phase test --dataroot /root/VCTK-Corpus/wav48/p225/p225_003.wav --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 2 --serial_batches --nThreads 0 --mask --mask_mode mode2 --load_pretrain ./checkpoints/mdct_nophase2

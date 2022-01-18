@@ -356,6 +356,8 @@ class MDCT2(nn.Module):
         self.center = center
 
         # making window
+        if window is None:
+            window = torch.ones
         if callable(window):
             self.win_length = int(win_length)
             self.window = window(self.win_length).to(self.device)

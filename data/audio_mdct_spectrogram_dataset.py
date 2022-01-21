@@ -35,16 +35,18 @@ class AudioMDCTSpectrogramDataset(BaseDataset):
             offset = random.randint(0, max_audio_start)
             waveform, orig_sample_rate = torchaudio.load(file_path, frame_offset=offset, num_frames=self.segment_length)
         else:
+            print("Warning: %s is shorter than segment_length"%file_path, metadata.num_frames)
             waveform, orig_sample_rate = torchaudio.load(file_path)
         return waveform, orig_sample_rate
+
     def __getitem__(self, idx):
         file_path = self.audio_file[idx]
         try:
             waveform, orig_sample_rate = self.readaudio(file_path)
         except: #try next until success
-            print('Load failed!')
             i = 1
             while 1:
+                print('Load failed!')
                 file_path = self.audio_file[idx+i]
                 try:
                     waveform, orig_sample_rate = self.readaudio(file_path)

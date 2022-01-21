@@ -126,7 +126,8 @@ class Pix2PixHDModel(BaseModel):
             mean = norm_param['mean']
             std  = norm_param['std']
 
-        log_audio = (log_audio-mean)/std
+        #log_audio = (log_audio-mean)/std
+        # Deprecated, for there already has been Instance Norm.
 
         if norm_param is None:
             audio_max = log_audio.max()

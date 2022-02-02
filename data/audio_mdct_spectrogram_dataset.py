@@ -5,7 +5,6 @@ import torch
 import torch.nn.functional as F
 import torchaudio
 import torchaudio.functional as aF
-import random
 from data.base_dataset import BaseDataset
 
 class AudioMDCTSpectrogramDataset(BaseDataset):
@@ -20,7 +19,7 @@ class AudioMDCTSpectrogramDataset(BaseDataset):
         self.audio_file = self.get_files(opt.dataroot)
         self.center = opt.center
 
-        random.seed(1234)
+        torch.manual_seed(opt.seed)
 
     def __len__(self):
         return len(self.audio_file)
@@ -32,7 +31,7 @@ class AudioMDCTSpectrogramDataset(BaseDataset):
         metadata = torchaudio.info(file_path)
         max_audio_start = metadata.num_frames - self.segment_length
         if max_audio_start > 0:
-            offset = random.randint(0, max_audio_start)
+            offset = torch.randint(low=0, high=max_audio_start, size=(1,)).item()
             waveform, orig_sample_rate = torchaudio.load(file_path, frame_offset=offset, num_frames=self.segment_length)
         else:
             print("Warning: %s is shorter than segment_length"%file_path, metadata.num_frames)

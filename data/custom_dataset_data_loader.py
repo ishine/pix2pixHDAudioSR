@@ -1,6 +1,7 @@
 import torch.utils.data
 from data.base_data_loader import BaseDataLoader
-
+from torch.utils.data import SubsetRandomSampler
+import random
 
 def CreateDataset(opt):
     dataset = None
@@ -22,15 +23,45 @@ class CustomDatasetDataLoader(BaseDataLoader):
     def initialize(self, opt):
         BaseDataLoader.initialize(self, opt)
         self.dataset = CreateDataset(opt)
+        dataset_size = len(self.dataset)
+        indices = list(range(dataset_size))
+        split = int(torch.floor(torch.Tensor([opt.validation_split * dataset_size])))
+
+        if not opt.serial_batches:
+            random.seed(opt.seed)
+            random.shuffle(indices)
+        self.train_indices, self.val_indices = indices[split:], indices[:split]
+        self.data_lenth = min(len(self.train_indices), self.opt.max_dataset_size)
+
+        # Creating PT data samplers and loaders:
+        train_sampler = SubsetRandomSampler(self.train_indices)
+        valid_sampler = SubsetRandomSampler(self.val_indices)
         self.dataloader = torch.utils.data.DataLoader(
             self.dataset,
             batch_size=opt.batchSize,
-            shuffle=not opt.serial_batches,
+            sampler=train_sampler,
             num_workers=int(opt.nThreads),
             pin_memory=True)
+        if len(self.val_indices) != 0:
+            self.eval_data_lenth = len(self.val_indices)
+            self.eval_dataloder = torch.utils.data.DataLoader(
+                self.dataset,
+                batch_size=opt.batchSize,
+                sampler=valid_sampler,
+                num_workers=int(opt.nThreads),
+                pin_memory=True)
+        else:
+            self.eval_dataloder = None
+            self.eval_data_lenth = 0
 
     def load_data(self):
         return self.dataloader
 
+    def eval_data(self):
+        return self.eval_dataloder
+
+    def eval_data_len(self):
+        return self.eval_data_lenth
+
     def __len__(self):
-        return min(len(self.dataset), self.opt.max_dataset_size)
+        return self.data_lenth

@@ -13,3 +13,5 @@ python generate_audio.py --name mdct_nophase2 --phase test --dataroot /root/VCTK
 python train.py --name mdct_2048 --dataroot /root/VCTK-Corpus/wav48 --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 8 --gpu_id 0 --nThreads 8 --mask --mask_mode mode0 --n_fft 2048 --win_length 2048
 
 python train.py --name mdct_hifitts_pretrain --dataroot /root/hi_fi_tts_v0/audio.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 30 --gpu_id 0 --nThreads 16 --mask --mask_mode mode2 --segment_length 25500
+
+python train.py --name mdct_VCTK_with_pretrain --dataroot /root/VCTK-Corpus/wav48 --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 8 --gpu_id 0 --nThreads 16 --mask --mask_mode mode2 --segment_length 25500 --netG local --niter 10 --niter_decay 5 --load_pretrain ./checkpoints/mdct_hifitts_pretrain_local

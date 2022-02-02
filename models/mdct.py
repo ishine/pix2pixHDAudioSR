@@ -342,7 +342,11 @@ class IMDCT(torch.nn.Module):
     def forward(self, X):
         X = self.imdct(X=X, window_function=self.window_function, step_length=self.step_length, n_fft=self.n_fft, padding = 0, out_length = self.out_length)
         return X
-
+"""
+Implemented by Chenhao Shuai
+Using Fold/Unfold to perform overlapping slicing/adding.
+Using C++ CUDA library for GPU accelerated DCT computation.
+"""
 from torch import nn
 from torch.nn.functional import pad, fold
 from dct.dct import DCT, IDCT
@@ -373,7 +377,7 @@ class MDCT2(nn.Module):
     def forward(self, signal):
         # Pad the signal so that the t-th frame is centered at time t * hop_length. Otherwise, the t-th frame begins at time t * hop_length.
         if self.center:
-            signal = pad(signal.to(self.device), (self.win_length//2, 0), mode=self.pad_mode)
+            signal = pad(signal.to(self.device), (self.win_length//2, self.win_length//2), mode=self.pad_mode)
 
         # Pad the signal to a proper length
         signal_len = int(len(signal))
@@ -397,13 +401,14 @@ class MDCT2(nn.Module):
 
 
 class IMDCT2(nn.Module):
-    def __init__(self, n_fft=2048, hop_length=None, win_length=None, window=None, center=True, pad_mode='constant', device='cuda') -> None:
+    def __init__(self, n_fft=2048, hop_length=None, win_length=None, window=None, center=True, pad_mode='constant', out_length=None,device='cuda') -> None:
         super().__init__()
         self.n_fft = n_fft
         self.pad_mode = pad_mode
         self.device = device
         self.hop_length = hop_length
         self.center = center
+        self.out_length = out_length
 
         # making window
         if window is None:
@@ -421,7 +426,7 @@ class IMDCT2(nn.Module):
         self.idct = IDCT()
 
     def forward(self, signal):
-        assert signal.dim() == 3, 'Only tensors shaped in BHW are supported'
+        assert signal.dim() == 3, 'Only tensors shaped in BHW are supported, got tensor of shape %s'%(str(signal.size()))
         assert signal.size()[-1] == self.n_fft, 'The last dim of input tensor should match the n_fft. Expected %d ,got %d'%(self.n_fft, signal.size()[-1])
 
         # Inverse transform at the last dim
@@ -440,6 +445,6 @@ class IMDCT2(nn.Module):
 
         if self.center:
             # extract the middle part
-            signal = signal[..., self.win_length//2:]
+            signal = signal[..., self.win_length//2:-self.win_length//2]
 
-        return signal
+        return signal if self.out_length is None else signal[...,:self.out_length]

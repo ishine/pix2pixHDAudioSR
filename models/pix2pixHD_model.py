@@ -214,18 +214,20 @@ class Pix2PixHDModel(BaseModel):
 
         return log_audio, pha, {'max':audio_max, 'min':audio_min, 'mean':mean, 'std':std}
 
-    def encode_input(self, lr_audio, inst_map=None, hr_audio=None, feat_map=None, infer=False):
-        # real images for training
+    def encode_input(self, lr_audio, inst_map=None, hr_audio=None, feat_map=None):
+        # hires audio for training
         if hr_audio is not None:
-            hr_spectro, hr_pha, hr_norm_param = self.mdct(hr_audio.data.cuda(), mask = False, norm_param=None, min_value=self.opt.min_value, mask_mode=None, explicit_encoding=self.opt.explicit_encoding, phase_encoding_mode=self.opt.phase_encoding_mode)
-            hr_spectro = Variable(hr_spectro.data.cuda())
+            with torch.no_grad():
+                hr_spectro, hr_pha, hr_norm_param = self.mdct(hr_audio, mask = False, norm_param=None, min_value=self.opt.min_value, mask_mode=None, explicit_encoding=self.opt.explicit_encoding, phase_encoding_mode=self.opt.phase_encoding_mode)
+            #hr_spectro = Variable(hr_spectro.data.cuda())
         else:
             hr_spectro = None
             hr_pha = None
             hr_norm_param = None
 
-        lr_spectro, lr_pha, lr_norm_param = self.mdct(lr_audio, mask = self.opt.mask, norm_param=None, min_value=self.opt.min_value, mask_mode=self.opt.mask_mode, explicit_encoding=self.opt.explicit_encoding, phase_encoding_mode=self.opt.phase_encoding_mode)
-        lr_spectro = lr_spectro.data.cuda()
+        with torch.no_grad():
+            lr_spectro, lr_pha, lr_norm_param = self.mdct(lr_audio, mask = self.opt.mask, norm_param=None, min_value=self.opt.min_value, mask_mode=self.opt.mask_mode, explicit_encoding=self.opt.explicit_encoding, phase_encoding_mode=self.opt.phase_encoding_mode)
+        #lr_spectro = lr_spectro.data.cuda()
 
         """ if self.opt.label_nc == 0:
             lr_spectro = lr_spectro.data.cuda()
@@ -237,20 +239,20 @@ class Pix2PixHDModel(BaseModel):
             input_label = input_label.scatter_(1, lr_spectro.data.long().cuda(), 1.0)
             if self.opt.data_type == 16:
                 input_label = input_label.half() """
+        # get edges from instance map (deprecated)
 
-        # (deprecated) get edges from instance map
         if not self.opt.no_instance:
             inst_map = inst_map.data.cuda()
             #edge_map = self.get_edges(inst_map)
             lr_spectro = torch.cat((lr_spectro, inst_map), dim=1)
-        lr_spectro = Variable(lr_spectro, volatile=infer)
+        #lr_spectro = Variable(lr_spectro, volatile=infer)
 
-        # instance map for feature encoding
-        if self.use_features:
+        # instance map for feature encoding (deprecated)
+        """ if self.use_features:
             # get precomputed feature maps
             if self.opt.load_features:
                 feat_map = Variable(feat_map.data.cuda())
-            """ if self.opt.label_feat:
+             if self.opt.label_feat:
                 #inst_map = label_map.cuda()
                 inst_map = lr_pha.cuda() """
 
@@ -337,27 +339,22 @@ class Pix2PixHDModel(BaseModel):
 
     def inference(self, lr_audio, inst):
         # Encode Inputs
-        inst = Variable(inst) if inst is not None else None
-        lr_audio = Variable(lr_audio)
-        lr_spectro, lr_pha, hr_spectro, hr_pha, feat_map, inst_map,hr_norm_param, lr_norm_param = self.encode_input(lr_audio, inst, None, infer=True)
+        lr_spectro, lr_pha, hr_spectro, hr_pha, feat_map, inst_map,hr_norm_param, lr_norm_param = self.encode_input(lr_audio, inst, None)
 
-        # Fake Generation
-        if self.use_features:
-            if self.opt.use_encoded_image:
-                # encode the real image to get feature map
-                feat_map = self.netE.forward(hr_spectro, inst_map)
+        with torch.no_grad():
+            # Fake Generation
+            if self.use_features:
+                if self.opt.use_encoded_image:
+                    # encode the real image to get feature map
+                    feat_map = self.netE.forward(hr_spectro, inst_map)
+                else:
+                    # sample clusters from precomputed features
+                    feat_map = self.sample_features(inst_map)
+                input_concat = torch.cat((lr_spectro, feat_map), dim=1)
             else:
-                # sample clusters from precomputed features
-                feat_map = self.sample_features(inst_map)
-            input_concat = torch.cat((lr_spectro, feat_map), dim=1)
-        else:
-            input_concat = lr_spectro
-
-        if torch.__version__.startswith('0.4'):
-            with torch.no_grad():
-                hr_spectro = self.netG.forward(input_concat)
-        else:
+                input_concat = lr_spectro
             hr_spectro = self.netG.forward(input_concat)
+
         return hr_spectro, lr_pha, lr_norm_param
 
     def sample_features(self, inst):

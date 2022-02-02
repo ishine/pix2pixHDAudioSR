@@ -1,0 +1,5 @@
+Pysepm: for calculating pesq scores
+https://github.com/schmiph2/pysepm
+
+DREAMSpace: for DCT library
+https://github.com/limbo018/DREAMPlace

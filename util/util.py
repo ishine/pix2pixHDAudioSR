@@ -2,8 +2,9 @@ from __future__ import print_function
 import torch
 import numpy as np
 from PIL import Image
-import numpy as np
 import os
+import torchaudio.functional as aF
+import pysepm
 
 # Converts a Tensor into a Numpy array
 # |imtype|: the desired type of the converted numpy array
@@ -98,3 +99,50 @@ class Colorize(object):
             color_image[2][mask] = self.cmap[label][2]
 
         return color_image
+
+def compute_matrics(hr_audio,lr_audio,sr_audio,opt):
+    # Normalize sr_audio and hr_audio
+    sr_audio = (sr_audio-sr_audio.min())/(sr_audio.max()-sr_audio.min())
+    hr_audio = (hr_audio-hr_audio.min())/(hr_audio.max()-hr_audio.min())
+    lr_audio = (lr_audio-lr_audio.min())/(lr_audio.max()-lr_audio.min())
+
+    # Calculate error
+    mse = ((sr_audio-hr_audio)**2).mean().item()
+
+    # Calculate SNR
+    snr_sr = 10*torch.log10(torch.mean(hr_audio**2)/torch.mean((sr_audio-hr_audio)**2)).item()
+    snr_lr = 10*torch.log10(torch.mean(hr_audio**2)/torch.mean((lr_audio-hr_audio)**2)).item()
+
+    # Calculate segmental SNR
+    #ssnr_sr = pysepm.SNRseg(clean_speech=hr_audio.numpy(),  processed_speech=sr_audio.numpy(), fs=opt.hr_sampling_rate)
+    #ssnr_lr = pysepm.SNRseg(clean_speech=hr_audio.numpy(),  processed_speech=lr_audio.numpy(), fs=opt.hr_sampling_rate)
+
+    # Calculate PESQ
+    """ if hr_audio.dim() > 1:
+        hr_audio = hr_audio.squeeze()
+        sr_audio = sr_audio.squeeze()
+        for i in range(hr_audio.size(-2)):
+            p = []
+            h = hr_audio[i,:]
+            s = sr_audio[i,:]
+            try:
+                pesq = pysepm.pesq(aF.resample(h, orig_freq=opt.hr_sampling_rate, new_freq=16000).numpy(), aF.resample(s, orig_freq=opt.hr_sampling_rate, new_freq=16000).numpy(), 16000)
+                p.append(pesq)
+            except:
+                print('PESQ no utterance')
+
+        pesq = np.mean(p)
+    else:
+        try:
+            pesq = pysepm.pesq(aF.resample(hr_audio,orig_freq=opt.hr_sampling_rate, new_freq=16000).numpy(), aF.resample(sr_audio,orig_freq=opt.hr_sampling_rate, new_freq=16000).numpy(), 16000)
+        except:
+            pesq = 0 """
+
+    # Calculte STFT loss(LSD)
+    hr_stft = aF.spectrogram(hr_audio, n_fft=opt.n_fft, hop_length=opt.hop_length, win_length=opt.win_length, window=torch.kaiser_window(opt.win_length, device='cuda'), center=opt.center, pad=0, power=2, normalized=False)
+    sr_stft = aF.spectrogram(sr_audio, n_fft=opt.n_fft, hop_length=opt.hop_length, win_length=opt.win_length, window=torch.kaiser_window(opt.win_length, device='cuda'), center=opt.center, pad=0, power=2, normalized=False)
+    hr_stft_log = torch.log10(hr_stft+1e-6)
+    sr_stft_log = torch.log10(sr_stft+1e-6)
+    lsd = torch.sqrt(torch.mean((hr_stft_log-sr_stft_log)**2,dim=-2)).mean().item()
+
+    return mse,snr_sr,snr_lr,0,0,0,lsd

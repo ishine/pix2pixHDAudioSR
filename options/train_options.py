@@ -23,7 +23,8 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument('--niter_decay', type=int, default=100, help='# of iter to linearly decay learning rate to zero')
         self.parser.add_argument('--beta1', type=float, default=0.5, help='momentum term of adam')
         self.parser.add_argument('--lr', type=float, default=0.0002, help='initial learning rate for adam')
-        self.parser.add_argument('--validation_split', type=float, default=0.2, help='proportion of training data to be used as validation data')
+        self.parser.add_argument('--validation_split', type=float, default=0.05, help='path to file containing validation split indices')
+        self.parser.add_argument('--val_indices', type=str, help='proportion of training data to be used as validation data if validation_split is not specified')
         self.parser.add_argument('--eval_size', type=int, default=100, help='how many samples to evaluate')
         self.parser.add_argument('--phase_encoding_mode', type=str, default=None, help='norm_dist|uni_dist|None')
 

@@ -27,7 +27,7 @@ with torch.no_grad():
         norm_params.append(norm_param)
 
 def imdct(log_mag, pha, norm_param, min_value=1e-7):
-    _imdct = IMDCT(torch.kaiser_window(opt.win_length).cuda(), step_length=opt.hop_length, n_fft=opt.n_fft, center=opt.center, out_length=opt.segment_length, device = 'cuda:0').cuda()
+    _imdct = IMDCT(torch.kaiser_window(opt.win_length).cuda(), step_length=opt.hop_length, n_fft=opt.n_fft, center=opt.center, out_length=opt.segment_length, device = 'cuda').cuda()
     log_mag = log_mag*(norm_param['max']-norm_param['min'])+norm_param['min']
     log_mag = log_mag*norm_param['std']+norm_param['mean']
     mag = aF.DB_to_amplitude(log_mag.cuda(),10,0.5)-min_value

@@ -172,7 +172,7 @@ class MDCT(torch.nn.Module):
         return x
 
 class IMDCT(torch.nn.Module):
-    def __init__(self, window_function, step_length=None, device='cuda:0',n_fft=2048, out_length = 48000, center=True):
+    def __init__(self, window_function, step_length=None, device='cuda',n_fft=2048, out_length = 48000, center=True):
         super().__init__()
         self.window_function = window_function
         self.step_length = step_length
@@ -375,18 +375,17 @@ class MDCT2(nn.Module):
         self.dct = DCT()
 
     def forward(self, signal):
-        # Pad the signal so that the t-th frame is centered at time t * hop_length. Otherwise, the t-th frame begins at time t * hop_length.
-        if self.center:
-            signal = pad(signal.to(self.device), (self.win_length//2, self.win_length//2), mode=self.pad_mode)
-
         # Pad the signal to a proper length
         signal_len = int(len(signal))
-        additional_len = (signal_len-self.win_length)%self.hop_length
+        start_pad = 0
+        # Pad the signal so that the t-th frame is centered at time t * hop_length. Otherwise, the t-th frame begins at time t * hop_length.
+        if self.center:
+            start_pad = self.hop_length
+        additional_len = signal_len%self.hop_length
+        end_pad = start_pad
         if additional_len:
-            pad_len = self.hop_length - additional_len
-        else:
-            pad_len = 0
-        signal = pad(signal, (0,pad_len), mode=self.pad_mode)
+            end_pad = start_pad + self.hop_length - additional_len
+        signal = pad(signal, (start_pad,end_pad), mode=self.pad_mode)
 
         # Slice the signal with overlapping
         signal = signal.unfold(dimension=-1, size=self.win_length, step=self.hop_length)
@@ -430,7 +429,7 @@ class IMDCT2(nn.Module):
         assert signal.size()[-1] == self.n_fft, 'The last dim of input tensor should match the n_fft. Expected %d ,got %d'%(self.n_fft, signal.size()[-1])
 
         # Inverse transform at the last dim
-        signal = self.idct(signal.to(self.device))
+        signal = self.idct(signal.to(self.device))/2.0
 
         # Remove padded zeros when doing dct
         if self.n_fft > self.win_length:

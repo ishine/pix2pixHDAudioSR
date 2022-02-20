@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image
 import os
 import torchaudio.functional as aF
+import torchaudio
 import pysepm
 
 # Converts a Tensor into a Numpy array
@@ -100,7 +101,21 @@ class Colorize(object):
 
         return color_image
 
+def imdct(log_mag, pha, norm_param, _imdct, min_value=1e-7, up_ratio=1):
+    if up_ratio > 1:
+        size = pha.size(-2)
+        psudo_pha = 2*torch.randint(low=0,high=2,size=pha.size(),device='cuda')-1
+        pha = torch.cat((pha[...,:int(size*(1/up_ratio)),:],psudo_pha[...,int(size*(1/up_ratio)):,:]),dim=-2)
+    log_mag = torch.abs(log_mag)*(norm_param['max']-norm_param['min'])+norm_param['min']
+    #log_mag = log_mag*norm_param['std']+norm_param['mean']
+    mag = aF.DB_to_amplitude(log_mag.cuda(),10,0.5)-min_value
+    mag = mag*pha
+    # BCHW -> BWH
+    audio = _imdct(mag.squeeze(1).permute(0,2,1).contiguous())
+    return audio
+
 def compute_matrics(hr_audio,lr_audio,sr_audio,opt):
+    device = sr_audio.device
     # Normalize sr_audio and hr_audio
     sr_audio = (sr_audio-sr_audio.min())/(sr_audio.max()-sr_audio.min())
     hr_audio = (hr_audio-hr_audio.min())/(hr_audio.max()-hr_audio.min())
@@ -139,10 +154,19 @@ def compute_matrics(hr_audio,lr_audio,sr_audio,opt):
             pesq = 0 """
 
     # Calculte STFT loss(LSD)
-    hr_stft = aF.spectrogram(hr_audio, n_fft=opt.n_fft, hop_length=opt.hop_length, win_length=opt.win_length, window=torch.kaiser_window(opt.win_length, device='cuda'), center=opt.center, pad=0, power=2, normalized=False)
-    sr_stft = aF.spectrogram(sr_audio, n_fft=opt.n_fft, hop_length=opt.hop_length, win_length=opt.win_length, window=torch.kaiser_window(opt.win_length, device='cuda'), center=opt.center, pad=0, power=2, normalized=False)
+    hr_stft = aF.spectrogram(hr_audio, n_fft=opt.n_fft, hop_length=opt.hop_length, win_length=opt.win_length, window=kbdwin(opt.win_length).cuda(), center=opt.center, pad=0, power=2, normalized=False)
+    sr_stft = aF.spectrogram(sr_audio, n_fft=opt.n_fft, hop_length=opt.hop_length, win_length=opt.win_length, window=kbdwin(opt.win_length).cuda(), center=opt.center, pad=0, power=2, normalized=False)
     hr_stft_log = torch.log10(hr_stft+1e-6)
     sr_stft_log = torch.log10(sr_stft+1e-6)
     lsd = torch.sqrt(torch.mean((hr_stft_log-sr_stft_log)**2,dim=-2)).mean().item()
 
     return mse,snr_sr,snr_lr,0,0,0,lsd
+
+def kbdwin(N:int, beta=12.0, device='cpu')->torch.Tensor:
+    # Matlab style Kaiser-Bessel window
+    # Author: Chenhao Shuai
+    assert N%2==0, "N must be even"
+    w = torch.kaiser_window(window_length=N//2+1, beta=beta*torch.pi, periodic=False, device=device)
+    w_sum = w.sum()
+    wdw_half = torch.sqrt(torch.cumsum(w,dim=0)/w_sum)[:-1]
+    return torch.cat((wdw_half,wdw_half.flip(dims=(0,))),dim=0)

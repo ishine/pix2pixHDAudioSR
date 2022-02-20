@@ -4,6 +4,7 @@ import os
 from torch.autograd import Variable
 from util.image_pool import ImagePool
 from util.spectro_img import compute_visuals
+from util.util import kbdwin
 from .base_model import BaseModel
 from . import networks
 from .mdct import MDCT2
@@ -28,7 +29,7 @@ class Pix2PixHDModel(BaseModel):
         self.gen_features = self.use_features and not self.opt.load_features
         input_nc = opt.label_nc if opt.label_nc != 0 else opt.input_nc
         #self._mdct = MDCT(torch.kaiser_window(self.opt.win_length).cuda(), step_length=self.opt.hop_length, n_fft=self.opt.n_fft, center=self.opt.center, device = 'cuda').cuda()
-        self._mdct = MDCT2(n_fft=self.opt.n_fft/2, hop_length=self.opt.hop_length, win_length=self.opt.win_length/2, window=torch.kaiser_window).cuda()
+        self._mdct = MDCT2(n_fft=self.opt.n_fft, hop_length=self.opt.hop_length, win_length=self.opt.win_length, window=kbdwin, device='cuda' if len(self.opt.gpu_ids) > 0 else 'cpu')
         ##### define networks
         # Generator network
         netG_input_nc = input_nc

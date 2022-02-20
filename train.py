@@ -58,32 +58,23 @@ eval_dataset_size = data_loader.eval_data_len()
 print('#training data = %d' % dataset_size)
 print('#evaluating data = %d' % eval_dataset_size)
 
+
 # Create the model
 model = create_model(opt)
 visualizer = Visualizer(opt)
 
 # IMDCT for evaluation
-_imdct = IMDCT2(window=torch.kaiser_window, win_length=opt.win_length//2, hop_length=opt.hop_length, n_fft=opt.n_fft//2, center=opt.center, out_length=opt.segment_length, device = 'cuda:0').cuda()
-
-def imdct(log_mag, pha, norm_param, _imdct, min_value=1e-7, up_ratio=1):
-    if up_ratio > 1:
-        size = pha.size(-2)
-        psudo_pha = 2*torch.randint(low=0,high=2,size=pha.size(),device='cuda')-1
-        pha = torch.cat((pha[...,:int(size*(1/up_ratio)),:],psudo_pha[...,int(size*(1/up_ratio)):,:]),dim=-2)
-    log_mag = log_mag*(norm_param['max']-norm_param['min'])+norm_param['min']
-    #log_mag = log_mag*norm_param['std']+norm_param['mean']
-    mag = aF.DB_to_amplitude(log_mag.cuda(),10,0.5)-min_value
-    mag = mag*pha
-    # BCHW -> BWH
-    audio = _imdct(mag.squeeze(1).permute(0,2,1).contiguous())
-    return audio
+from util.util import kbdwin, imdct
+_imdct = IMDCT2(window=kbdwin, win_length=opt.win_length, hop_length=opt.hop_length, n_fft=opt.n_fft, center=opt.center, out_length=opt.segment_length, device = 'cuda').cuda()
 
 if opt.fp16:
-    from apex import amp
-    model, [optimizer_G, optimizer_D] = amp.initialize(model, [model.optimizer_G, model.optimizer_D], opt_level='O1')
-    model = torch.nn.DataParallel(model, device_ids=opt.gpu_ids)
-else:
-    optimizer_G, optimizer_D = model.module.optimizer_G, model.module.optimizer_D
+    from torch.cuda.amp import autocast as autocast
+    from torch.cuda.amp import GradScaler
+    # according to the offical tutorial, use only one GradScaler and backward losses separately
+    # https://pytorch.org/docs/stable/notes/amp_examples.html#working-with-multiple-models-losses-and-optimizers
+    scaler = GradScaler()
+
+optimizer_G, optimizer_D = model.optimizer_G, model.optimizer_D
 
 total_steps = (start_epoch-1) * dataset_size + epoch_iter
 display_delta = total_steps % opt.display_freq
@@ -107,8 +98,8 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
     for i, data in enumerate(dataset, start=epoch_iter):
         if end:
             print('exiting and saving the model at the epoch %d, iters %d' % (epoch, total_steps))
-            model.module.save('latest')
-            model.module.save(epoch)
+            model.save('latest')
+            model.save(epoch)
             np.savetxt(iter_path, (epoch+1, 0), delimiter=',', fmt='%d')
             exit(0)
         if total_steps % opt.print_freq == print_delta:
@@ -120,11 +111,15 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         save_fake = total_steps % opt.display_freq == display_delta
 
         ############## Forward Pass ######################
-        losses, generated = model(Variable(data['label']), Variable(data['inst']),Variable(data['image']), Variable(data['feat']), infer=save_fake)
+        if opt.fp16:
+            with autocast():
+                losses, generated = model(Variable(data['label']), Variable(data['inst']),Variable(data['image']), Variable(data['feat']), infer=save_fake)
+        else:
+            losses, generated = model(Variable(data['label']), Variable(data['inst']),Variable(data['image']), Variable(data['feat']), infer=save_fake)
 
         # sum per device losses
         losses = [ torch.mean(x) if not isinstance(x, int) else x for x in losses ]
-        loss_dict = dict(zip(model.module.loss_names, losses))
+        loss_dict = dict(zip(model.loss_names, losses))
 
         # calculate final loss scalar
         loss_D = (loss_dict['D_fake'] + loss_dict['D_real']) * 0.5
@@ -134,18 +129,24 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         # update generator weights
         optimizer_G.zero_grad()
         if opt.fp16:
-            with amp.scale_loss(loss_G, optimizer_G) as scaled_loss: scaled_loss.backward()
+            #with amp.scale_loss(loss_G, optimizer_G) as scaled_loss: scaled_loss.backward()
+            scaler.scale(loss_G).backward()
+            scaler.step(optimizer_G)
+            #scaler.update()
         else:
             loss_G.backward()
-        optimizer_G.step()
+            optimizer_G.step()
 
         # update discriminator weights
         optimizer_D.zero_grad()
         if opt.fp16:
-            with amp.scale_loss(loss_D, optimizer_D) as scaled_loss: scaled_loss.backward()
+            #with amp.scale_loss(loss_D, optimizer_D) as scaled_loss: scaled_loss.backward()
+            scaler.scale(loss_D).backward()
+            scaler.step(optimizer_D)
+            scaler.update()
         else:
             loss_D.backward()
-        optimizer_D.step()
+            optimizer_D.step()
 
         ############## Display results and errors ##########
         ### print out errors
@@ -158,13 +159,13 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
 
         ### display output images
         if save_fake:
-            visuals = model.module.get_current_visuals()
+            visuals = model.get_current_visuals()
             visualizer.display_current_results(visuals, epoch, total_steps)
 
         ### save latest model
         if total_steps % opt.save_latest_freq == save_delta:
             print('saving the latest model (epoch %d, total_steps %d)' % (epoch, total_steps))
-            model.module.save('latest')
+            model.save('latest')
             np.savetxt(iter_path, (epoch, epoch_iter), delimiter=',', fmt='%d')
 
         if total_steps % opt.eval_freq == eval_delta:
@@ -178,10 +179,10 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
                 lr_audio = eval_data['label']
                 hr_audio = eval_data['image']
                 with torch.no_grad():
-                    sr_spectro, lr_pha, norm_param = model.module.inference(lr_audio, None)
+                    sr_spectro, lr_pha, norm_param = model.inference(lr_audio, None)
                     up_ratio = opt.hr_sampling_rate / opt.lr_sampling_rate
                     sr_audio = imdct(sr_spectro, lr_pha, norm_param, _imdct, up_ratio)
-                    _mse,_snr_sr,_snr_lr,_ssnr_sr,_ssnr_lr,_pesq,_lsd = compute_matrics(sr_audio.cuda(), hr_audio.cuda(), lr_audio.cuda(), opt)
+                    _mse,_snr_sr,_snr_lr,_ssnr_sr,_ssnr_lr,_pesq,_lsd = compute_matrics(hr_audio.cuda(), lr_audio.cuda(), sr_audio.cuda(), opt)
                     err.append(_mse)
                     snr.append((_snr_lr, _snr_sr))
                     snr_seg.append((_ssnr_lr, _ssnr_sr))
@@ -193,7 +194,8 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
             eval_result = {'err': np.mean(err), 'snr': np.mean(snr), 'snr_seg': np.mean(snr_seg), 'pesq': np.mean(pesq), 'lsd': np.mean(lsd)}
             with open(eval_path, 'a') as csv_file:
                 writer = csv.DictWriter(csv_file, fieldnames=eval_result.keys())
-                writer.writeheader()
+                if csv_file.tell() == 0:
+                    writer.writeheader()
                 writer.writerow(eval_result)
             print('Evaluation:', eval_result)
             model.train()
@@ -209,14 +211,14 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
     ### save model for this epoch
     if epoch % opt.save_epoch_freq == 0:
         print('saving the model at the end of epoch %d, iters %d' % (epoch, total_steps))
-        model.module.save('latest')
-        model.module.save(epoch)
+        model.save('latest')
+        model.save(epoch)
         np.savetxt(iter_path, (epoch+1, 0), delimiter=',', fmt='%d')
 
     ### instead of only training the local enhancer, train the entire network after certain iterations
     if (opt.niter_fix_global != 0) and (epoch == opt.niter_fix_global):
-        model.module.update_fixed_params()
+        model.update_fixed_params()
 
     ### linearly decay learning rate after certain iterations
     if epoch > opt.niter:
-        model.module.update_learning_rate()
+        model.update_learning_rate()

@@ -40,23 +40,33 @@ class CustomDatasetDataLoader(BaseDataLoader):
             torch.save(self.val_indices, os.path.join(self.opt.checkpoints_dir, self.opt.name,'validation_indices.pt'))
 
         # Creating PT data samplers and loaders:
-        train_sampler = SubsetRandomSampler(self.train_indices)
-        valid_sampler = SubsetRandomSampler(self.val_indices)
-        self.dataloader = torch.utils.data.DataLoader(
-            self.dataset,
-            batch_size=opt.batchSize,
-            sampler=train_sampler,
-            num_workers=int(opt.nThreads),
-            pin_memory=True)
-        if len(self.val_indices) != 0:
-            self.eval_data_lenth = len(self.val_indices)
-            self.eval_dataloder = torch.utils.data.DataLoader(
+        if opt.phase == "train":
+            train_sampler = SubsetRandomSampler(self.train_indices)
+            valid_sampler = SubsetRandomSampler(self.val_indices)
+            self.dataloader = torch.utils.data.DataLoader(
                 self.dataset,
                 batch_size=opt.batchSize,
-                sampler=valid_sampler,
+                sampler=train_sampler,
                 num_workers=int(opt.nThreads),
                 pin_memory=True)
-        else:
+            if len(self.val_indices) != 0:
+                self.eval_data_lenth = len(self.val_indices)
+                self.eval_dataloder = torch.utils.data.DataLoader(
+                    self.dataset,
+                    batch_size=opt.batchSize,
+                    sampler=valid_sampler,
+                    num_workers=int(opt.nThreads),
+                    pin_memory=True)
+            else:
+                self.eval_dataloder = None
+                self.eval_data_lenth = 0
+        elif opt.phase == "test":
+            self.dataloader = torch.utils.data.DataLoader(
+                self.dataset,
+                batch_size=opt.batchSize,
+                num_workers=int(opt.nThreads),
+                shuffle=False,
+                pin_memory=True)
             self.eval_dataloder = None
             self.eval_data_lenth = 0
 

@@ -18,4 +18,8 @@ python train.py --name mdct_VCTK_with_pretrain --dataroot /root/VCTK-Corpus/wav4
 
 python train.py --name mdct_VCTK_with_pretrain_glob --dataroot /root/VCTK-Corpus/wav48 --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 30 --gpu_id 1 --nThreads 16 --mask --mask_mode mode2 --segment_length 25500 --load_pretrain ./checkpoints/mdct_hifitts_pretrain --niter 50 --niter_decay 50
 
-python train.py --name mdct_hifitts_pretrain_amp --dataroot /root/hi_fi_tts_v0/audio.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 32 --gpu_id 1 --nThreads 16 --mask --mask_mode mode2 --netG local --niter 20 --niter_decay 10 --fp16 --validation_split 0.02 --eval_freq 400 --abs_spectro
+python train.py --name mdct_hifitts_pretrain_amp --dataroot /root/hi_fi_tts_v0/audio.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 32 --gpu_id 0 --nThreads 16 --mask --mask_mode mode2 --netG local --niter 20 --niter_decay 10 --fp16 --validation_split 0.01 --abs_spectro --center
+
+python generate_audio.py --name mdct_hifitts_pretrain_amp_gen --dataroot /root/VCTK-Corpus/wav48/p227/p227_004.wav --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 2 --serial_batches --nThreads 0 --mask --mask_mode mode2 --netG local --validation_split 0 --load_pretrain ./checkpoints/mdct_hifitts_pretrain_amp2 --gpu_id 2 --center --phase test --serial_batches
+
+python train.py --name mdct_hifitts_pretrain_test --dataroot /root/hi_fi_tts_v0/audio.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 32 --gpu_id 2 --nThreads 16 --mask --mask_mode mode2 --netG local --niter 20 --niter_decay 10 --fp16 --validation_split 0.01 --abs_spectro --center --eval_freq 400 --load_pretrain ./checkpoints/mdct_hifitts_pretrain_amp

@@ -1,4 +1,3 @@
-from cmath import log
 import math
 import os
 import time
@@ -7,7 +6,6 @@ import csv
 import numpy as np
 import torch
 from torch.autograd import Variable
-import torchaudio.functional as aF
 
 def lcm(a,b): return abs(a * b)/math.gcd(a,b) if a and b else 0
 
@@ -41,14 +39,6 @@ if opt.continue_train:
 else:
     start_epoch, epoch_iter = 1, 0
 
-opt.print_freq = lcm(opt.print_freq, opt.batchSize)
-if opt.debug:
-    opt.display_freq = 1
-    opt.print_freq = 1
-    opt.niter = 1
-    opt.niter_decay = 0
-    opt.max_dataset_size = 10
-
 # Create the data loader
 data_loader = CreateDataLoader(opt)
 dataset = data_loader.load_data()
@@ -58,24 +48,31 @@ eval_dataset_size = data_loader.eval_data_len()
 print('#training data = %d' % dataset_size)
 print('#evaluating data = %d' % eval_dataset_size)
 
-
 # Create the model
 model = create_model(opt)
 visualizer = Visualizer(opt)
+optimizer_G, optimizer_D = model.optimizer_G, model.optimizer_D
 
 # IMDCT for evaluation
 from util.util import kbdwin, imdct
-_imdct = IMDCT2(window=kbdwin, win_length=opt.win_length, hop_length=opt.hop_length, n_fft=opt.n_fft, center=opt.center, out_length=opt.segment_length, device = 'cuda').cuda()
+_imdct = IMDCT2(window=kbdwin, win_length=opt.win_length, hop_length=opt.hop_length, n_fft=opt.n_fft, center=opt.center, out_length=opt.segment_length, device = 'cuda')
 
 if opt.fp16:
     from torch.cuda.amp import autocast as autocast
     from torch.cuda.amp import GradScaler
-    # according to the offical tutorial, use only one GradScaler and backward losses separately
+    # According to the offical tutorial, use only one GradScaler and backward losses separately
     # https://pytorch.org/docs/stable/notes/amp_examples.html#working-with-multiple-models-losses-and-optimizers
     scaler = GradScaler()
 
-optimizer_G, optimizer_D = model.optimizer_G, model.optimizer_D
 
+# Set frequency for displaying information and saving
+opt.print_freq = lcm(opt.print_freq, opt.batchSize)
+if opt.debug:
+    opt.display_freq = 1
+    opt.print_freq = 1
+    opt.niter = 1
+    opt.niter_decay = 0
+    opt.max_dataset_size = 10
 total_steps = (start_epoch-1) * dataset_size + epoch_iter
 display_delta = total_steps % opt.display_freq
 print_delta = total_steps % opt.print_freq
@@ -91,6 +88,41 @@ def signal_handler(signal, frame):
     end = True
 signal.signal(signal.SIGINT, signal_handler)
 
+# Evaluation process
+# Wrap it as a function so that I dont have to free up memory manually
+def eval_model():
+    err = []
+    snr = []
+    snr_seg = []
+    pesq = []
+    lsd = []
+    for j, eval_data in enumerate(eval_dataset):
+        model.eval()
+        lr_audio = eval_data['label']
+        hr_audio = eval_data['image']
+        with torch.no_grad():
+            sr_spectro, lr_pha, norm_param, lr_spectro = model.inference(lr_audio, None)
+            up_ratio = opt.hr_sampling_rate / opt.lr_sampling_rate
+            sr_audio = imdct(log_mag=sr_spectro, pha=lr_pha, norm_param=norm_param, _imdct=_imdct, up_ratio=up_ratio)
+            _mse,_snr_sr,_snr_lr,_ssnr_sr,_ssnr_lr,_pesq,_lsd = compute_matrics(hr_audio.squeeze(), lr_audio.squeeze(), sr_audio.squeeze(), opt)
+            err.append(_mse)
+            snr.append((_snr_lr, _snr_sr))
+            snr_seg.append((_ssnr_lr, _ssnr_sr))
+            pesq.append(_pesq)
+            lsd.append(_lsd)
+        if j >= opt.eval_size:
+            break
+
+    eval_result = {'err': np.mean(err), 'snr': np.mean(snr), 'snr_seg': np.mean(snr_seg), 'pesq': np.mean(pesq), 'lsd': np.mean(lsd)}
+    with open(eval_path, 'a') as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=eval_result.keys())
+        if csv_file.tell() == 0:
+            writer.writeheader()
+        writer.writerow(eval_result)
+    print('Evaluation:', eval_result)
+    model.train()
+
+# Training...
 for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
     epoch_start_time = time.time()
     if epoch != start_epoch:
@@ -107,7 +139,7 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         total_steps += opt.batchSize
         epoch_iter += opt.batchSize
 
-        # whether to collect output images
+        # Whether to collect output images
         save_fake = total_steps % opt.display_freq == display_delta
 
         ############## Forward Pass ######################
@@ -117,11 +149,11 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         else:
             losses, generated = model(Variable(data['label']), Variable(data['inst']),Variable(data['image']), Variable(data['feat']), infer=save_fake)
 
-        # sum per device losses
+        # Sum per device losses
         losses = [ torch.mean(x) if not isinstance(x, int) else x for x in losses ]
         loss_dict = dict(zip(model.loss_names, losses))
 
-        # calculate final loss scalar
+        # Calculate final loss scalar
         loss_D = (loss_dict['D_fake'] + loss_dict['D_real']) * 0.5
         loss_G = loss_dict['G_GAN'] + loss_dict.get('G_GAN_Feat',0) + loss_dict.get('G_VGG',0)
 
@@ -132,6 +164,7 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
             #with amp.scale_loss(loss_G, optimizer_G) as scaled_loss: scaled_loss.backward()
             scaler.scale(loss_G).backward()
             scaler.step(optimizer_G)
+            # update the scaler only once per iteration
             #scaler.update()
         else:
             loss_G.backward()
@@ -169,36 +202,8 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
             np.savetxt(iter_path, (epoch, epoch_iter), delimiter=',', fmt='%d')
 
         if total_steps % opt.eval_freq == eval_delta:
-            err = []
-            snr = []
-            snr_seg = []
-            pesq = []
-            lsd = []
-            for j, eval_data in enumerate(eval_dataset):
-                model.eval()
-                lr_audio = eval_data['label']
-                hr_audio = eval_data['image']
-                with torch.no_grad():
-                    sr_spectro, lr_pha, norm_param = model.inference(lr_audio, None)
-                    up_ratio = opt.hr_sampling_rate / opt.lr_sampling_rate
-                    sr_audio = imdct(sr_spectro, lr_pha, norm_param, _imdct, up_ratio)
-                    _mse,_snr_sr,_snr_lr,_ssnr_sr,_ssnr_lr,_pesq,_lsd = compute_matrics(hr_audio.cuda(), lr_audio.cuda(), sr_audio.cuda(), opt)
-                    err.append(_mse)
-                    snr.append((_snr_lr, _snr_sr))
-                    snr_seg.append((_ssnr_lr, _ssnr_sr))
-                    pesq.append(_pesq)
-                    lsd.append(_lsd)
-                if j >= opt.eval_size:
-                    break
-
-            eval_result = {'err': np.mean(err), 'snr': np.mean(snr), 'snr_seg': np.mean(snr_seg), 'pesq': np.mean(pesq), 'lsd': np.mean(lsd)}
-            with open(eval_path, 'a') as csv_file:
-                writer = csv.DictWriter(csv_file, fieldnames=eval_result.keys())
-                if csv_file.tell() == 0:
-                    writer.writeheader()
-                writer.writerow(eval_result)
-            print('Evaluation:', eval_result)
-            model.train()
+            eval_model()
+            torch.cuda.empty_cache()
 
         if epoch_iter >= dataset_size:
             break

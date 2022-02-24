@@ -99,15 +99,16 @@ class AudioMDCTSpectrogramTestDataset(BaseDataset):
         self.dataroot = opt.dataroot
         try:
             self.raw_audio, self.in_sampling_rate = torchaudio.load(self.dataroot)
-            self.audio_len = len(self.raw_audio)
+            self.audio_len = self.raw_audio.size(-1)
+            print("Audio length:", self.audio_len)
         except:
             self.raw_audio = []
             print("load audio failed")
             exit(0)
-        if opt.is_lr_input == False:
-            self.raw_audio = aF.resample(waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.lr_sampling_rate)
-        self.raw_audio = aF.resample(waveform=self.raw_audio, orig_freq=self.lr_sampling_rate, new_freq=self.hr_sampling_rate)
-        self.seg_audio = self.seg_pad_audio(self.raw_audio)
+        if not opt.is_lr_input:
+            self.lr_audio = aF.resample(waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.lr_sampling_rate)
+        self.lr_audio = aF.resample(waveform=self.lr_audio, orig_freq=self.lr_sampling_rate, new_freq=self.hr_sampling_rate)
+        self.seg_audio = self.seg_pad_audio(self.lr_audio)
 
     def __len__(self):
         return self.seg_audio.size(0)

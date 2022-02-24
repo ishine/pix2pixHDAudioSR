@@ -116,26 +116,23 @@ class Pix2PixHDModel(BaseModel):
     def mdct(self, audio, min_value=1e-7, mask=False, norm_param=None, mask_mode=None, explicit_encoding=False, phase_encoding_mode=None):
         audio = self._mdct(audio.cuda()).unsqueeze(1).permute(0,1,3,2)
         log_audio = aF.amplitude_to_DB(
-            (audio.abs() + min_value),20,min_value,1
+            (torch.abs(audio)+ min_value),20,min_value,1
             ).cuda()
         pha = torch.sign(audio).cuda()
 
         if norm_param is None:
             mean = log_audio.mean()
             std  = log_audio.var().sqrt()
-        else:
-            mean = norm_param['mean']
-            std  = norm_param['std']
-
-        #log_audio = (log_audio-mean)/std
-        # Deprecated, for there already has been Instance Norm.
-
-        if norm_param is None:
             audio_max = log_audio.max()
             audio_min = log_audio.min()
         else:
+            mean = norm_param['mean']
+            std  = norm_param['std']
             audio_max = norm_param['max']
             audio_min = norm_param['min']
+
+        #log_audio = (log_audio-mean)/std
+        # Deprecated, for there already has been Instance Norm.
 
         if explicit_encoding:
             # multiply phase with log magnitude
@@ -347,16 +344,16 @@ class Pix2PixHDModel(BaseModel):
             if self.use_features:
                 if self.opt.use_encoded_image:
                     # encode the real image to get feature map
-                    feat_map = self.netE.forward(hr_spectro, inst_map)
+                    feat_map = self.netE.forward(sr_spectro, inst_map)
                 else:
                     # sample clusters from precomputed features
                     feat_map = self.sample_features(inst_map)
                 input_concat = torch.cat((lr_spectro, feat_map), dim=1)
             else:
                 input_concat = lr_spectro
-            hr_spectro = self.netG.forward(input_concat)
+            sr_spectro = self.netG.forward(input_concat)
 
-        return hr_spectro, lr_pha, lr_norm_param
+        return sr_spectro, lr_pha, lr_norm_param, lr_spectro
 
     def sample_features(self, inst):
         # read precomputed feature clusters

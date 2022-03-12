@@ -101,18 +101,23 @@ class Colorize(object):
 
         return color_image
 
-def imdct(log_mag, pha, norm_param, _imdct, min_value=1e-7, up_ratio=1):
-    device = log_mag.device
-    if up_ratio > 1:
-        size = pha.size(-2)
-        psudo_pha = 2*torch.randint(low=0,high=2,size=pha.size(),device=device)-1
-        pha = torch.cat((pha[...,:int(size*(1/up_ratio)),:],psudo_pha[...,int(size*(1/up_ratio)):,:]),dim=-2)
-    log_mag = torch.abs(log_mag)*(norm_param['max'].to(device)-norm_param['min'].to(device))+norm_param['min'].to(device)
+def imdct(spectro, pha, norm_param, _imdct, min_value=1e-7, up_ratio=1, explicit_encoding=False):
+    device = spectro.device
+    spectro = torch.abs(spectro)*(norm_param['max'].to(device)-norm_param['min'].to(device))+norm_param['min'].to(device)
     #log_mag = log_mag*norm_param['std']+norm_param['mean']
-    mag = aF.DB_to_amplitude(log_mag.to(device),10,0.5)-min_value
-    mag = mag*pha
+    if explicit_encoding:
+        pha = torch.sign(spectro[...,0,:,:]-spectro[...,1,:,:])
+        spectro = aF.DB_to_amplitude(spectro.to(device),10,0.5)
+        spectro = (spectro[...,0,:,:]+spectro[...,1,:,:])
+    else:
+        spectro = aF.DB_to_amplitude(spectro.to(device),10,0.5)-min_value
+        if up_ratio > 1:
+            size = pha.size(-2)
+            psudo_pha = 2*torch.randint(low=0,high=2,size=pha.size(),device=device)-1
+            pha = torch.cat((pha[...,:int(size*(1/up_ratio)),:],psudo_pha[...,int(size*(1/up_ratio)):,:]),dim=-2)
     # BCHW -> BWH
-    audio = _imdct(mag.squeeze(1).permute(0,2,1).contiguous())
+    spectro = spectro*pha
+    audio = _imdct(spectro.squeeze(1).permute(0,2,1).contiguous())
     return audio
 
 def compute_matrics(hr_audio,lr_audio,sr_audio,opt):

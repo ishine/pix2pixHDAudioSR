@@ -65,7 +65,7 @@ class BaseOptions():
         # mask options
         self.parser.add_argument('--mask', action='store_true', help='mask high freq conponent of lr spectro')
         self.parser.add_argument('--mask_mode', type=str, default=None, help='[None|mode0|mode1]')
-        self.parser.add_argument('--explicit_encoding', action='store_true', help='if selected, the log magnitude will multiply with phase to perform explicit coding')
+        self.parser.add_argument('--explicit_encoding', action='store_true', help='if selected, using trick to encode phase')
         self.parser.add_argument('--min_value', type=float, default=1e-7, help='minimum value to cutoff the spectrogram')
 
         self.initialized = True

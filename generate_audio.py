@@ -37,7 +37,7 @@ with torch.no_grad():
 # Convert to time series
 audio = []
 for m,p,n in zip(spectro_mag,spectro_pha,norm_params):
-    audio.append(imdct(log_mag=m, pha=p, norm_param=n, _imdct=_imdct, up_ratio=opt.hr_sampling_rate / opt.lr_sampling_rate))
+    audio.append(imdct(spectro=m, pha=p, norm_param=n, _imdct=_imdct, up_ratio=opt.hr_sampling_rate / opt.lr_sampling_rate))
 
 # Concatenate the audio
 audio = torch.cat(audio,dim=0).view(1,-1)

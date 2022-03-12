@@ -29,7 +29,7 @@ class Pix2PixHDModel(BaseModel):
         self.gen_features = self.use_features and not self.opt.load_features
         input_nc = opt.label_nc if opt.label_nc != 0 else opt.input_nc
         #self._mdct = MDCT(torch.kaiser_window(self.opt.win_length).cuda(), step_length=self.opt.hop_length, n_fft=self.opt.n_fft, center=self.opt.center, device = 'cuda').cuda()
-        self._mdct = MDCT2(n_fft=self.opt.n_fft, hop_length=self.opt.hop_length, win_length=self.opt.win_length, window=kbdwin, device='cuda' if len(self.opt.gpu_ids) > 0 else 'cpu')
+        self._mdct = MDCT2(n_fft=self.opt.n_fft, hop_length=self.opt.hop_length, win_length=self.opt.win_length, window=kbdwin, device=self.device)
         ##### define networks
         # Generator network
         netG_input_nc = input_nc
@@ -114,17 +114,29 @@ class Pix2PixHDModel(BaseModel):
             self.optimizer_D = torch.optim.Adam(params, lr=opt.lr, betas=(opt.beta1, 0.999))
 
     def mdct(self, audio, min_value=1e-7, mask=False, norm_param=None, mask_mode=None, explicit_encoding=False, phase_encoding_mode=None):
-        audio = self._mdct(audio.cuda()).unsqueeze(1).permute(0,1,3,2)
-        log_audio = aF.amplitude_to_DB(
-            (torch.abs(audio)+ min_value),20,min_value,1
-            ).cuda()
-        pha = torch.sign(audio).cuda()
+        spectro = self._mdct(audio.to(self.device)).unsqueeze(1).permute(0,1,3,2)
+        if explicit_encoding:
+            alpha = 3/5
+            neg = 0.5*(torch.abs(spectro)-spectro)
+            pos = spectro+neg
+            log_spectro = torch.cat(
+                (
+                    aF.amplitude_to_DB(alpha*pos+(1-alpha)*neg, 20, min_value, 1),
+                    aF.amplitude_to_DB((1-alpha)*pos+alpha*neg, 20, min_value, 1)
+                ),
+                dim=1,
+            )
+        else:
+            log_spectro = aF.amplitude_to_DB(
+            (torch.abs(spectro)+ min_value),20,min_value,1
+            ).to(self.device)
+        pha = torch.sign(spectro)
 
         if norm_param is None:
-            mean = log_audio.mean()
-            std  = log_audio.var().sqrt()
-            audio_max = log_audio.max()
-            audio_min = log_audio.min()
+            mean = log_spectro.mean()
+            std  = log_spectro.var().sqrt()
+            audio_max = log_spectro.max()
+            audio_min = log_spectro.min()
         else:
             mean = norm_param['mean']
             std  = norm_param['std']
@@ -134,83 +146,62 @@ class Pix2PixHDModel(BaseModel):
         #log_audio = (log_audio-mean)/std
         # Deprecated, for there already has been Instance Norm.
 
-        if explicit_encoding:
-            # multiply phase with log magnitude
-            log_audio = (log_audio-audio_min)/(audio_max-audio_min)
-            # log_audio @ [0,1]
-            log_audio = log_audio*pha
-            # log_audio @ [-1,1], double peak
-        else:   #TODO
+        # if explicit_encoding:
+        #     # multiply phase with log magnitude
+        #     log_audio = (log_audio-audio_min)/(audio_max-audio_min)
+        #     # log_audio @ [0,1]
+        #     log_audio = log_audio*pha
+        #     # log_audio @ [-1,1], double peak
+        if not explicit_encoding:   #TODO
             if   phase_encoding_mode == 'uni_dist':
-                pha = pha*torch.rand(pha.size()).cuda()
+                pha = pha*torch.rand(pha.size(), device=self.device)
             elif phase_encoding_mode == 'norm_dist':
-                _noise = torch.randn(pha.size()).cuda()
+                _noise = torch.randn(pha.size(), device=self.device)
                 _noise_min = _noise.min()
                 _noise_max = _noise.max()
                 _noise = (_noise - _noise_min)/(_noise_max - _noise_min)
                 pha = pha*_noise
             elif phase_encoding_mode == 'norm_dist2':
-                _noise = torch.randn(pha.size()).abs().cuda()
+                _noise = torch.randn(pha.size(), device=self.device).abs()
                 pha = pha*_noise
             elif phase_encoding_mode == 'scale':
                 pha = pha*0.5
-            log_audio = (log_audio-audio_min)/(audio_max-audio_min)
+        log_spectro = (log_spectro-audio_min)/(audio_max-audio_min)
             # log_audio @ [-1,1], singal peak
 
         if mask:
             # mask the lr spectro so that it does not learn from garbage infomation
-            size = log_audio.size()
-            #print(size)
+            size = log_spectro.size()
             up_ratio = self.opt.hr_sampling_rate / self.opt.lr_sampling_rate
-            mask_size = int(size[2]/up_ratio)
-            _mask = torch.cat(
-            (
-                 torch.ones(size[0],
-                            size[1],
-                            mask_size,
-                            size[3]
-                            ),
-                torch.zeros(size[0],
-                            size[1],
-                            size[2]-mask_size,
-                            size[3]
-                            )
-            ),dim=2).cuda()
-            log_audio = log_audio * _mask
+            mask_size = int(size[2]*(1-1/up_ratio))
 
-            if mask_mode is not None:
-                # fill the blank mask with noise
-                _noise = torch.randn(size[0], size[1], size[2]-mask_size, size[3]).cuda()
-                _noise_min = _noise.min()
-                _noise_max = _noise.max()
+            # fill the blank mask with noise
+            _noise = torch.randn(size[0], size[1], mask_size, size[3], device=self.device)
+            _noise_min = _noise.min()
+            _noise_max = _noise.max()
 
-                if mask_mode == 'mode0':
-                    #fill empty with randn noise, single peak, centered at 0
-                    _noise = _noise/(_noise_max - _noise_min)
-                    #_noise @ [-1,1]
-                elif mask_mode == 'mode1':
-                    #fill empty with randn noise, double peak, mimic the real distribution
-                    _noise = (_noise - _noise_min)/(_noise_max - _noise_min)
-                    #_noise @ [0,1]
-                    psudo_pha = 2*torch.randint(low=0,high=2,size=_noise.size()).cuda()-1
-                    _noise = _noise * psudo_pha
-                    #_noise @ [-1,1]
-                elif mask_mode == 'mode2':
-                    #fill empty with randn noise, single peak, centered at 0.5
-                    _noise = (_noise - _noise_min)/(_noise_max - _noise_min)
-
-                noise = torch.cat(
-                        (
-                            torch.zeros(size[0],
-                                        size[1],
-                                        mask_size,
-                                        size[3]
-                                        ).cuda(),
-                            _noise
-                        ),dim=2).cuda()
-                log_audio = log_audio + noise
-
-        return log_audio, pha, {'max':audio_max, 'min':audio_min, 'mean':mean, 'std':std}
+            if mask_mode == 'mode0':
+                #fill empty with randn noise, single peak, centered at 0
+                _noise = _noise/(_noise_max - _noise_min)
+                #_noise @ [-1,1]
+            elif mask_mode == 'mode1':
+                #fill empty with randn noise, double peak, mimic the real distribution
+                _noise = (_noise - _noise_min)/(_noise_max - _noise_min)
+                #_noise @ [0,1]
+                psudo_pha = 2*torch.randint(low=0,high=2,size=_noise.size(), device=self.device)-1
+                _noise = _noise * psudo_pha
+                #_noise @ [-1,1]
+            elif mask_mode == 'mode2':
+                #fill empty with randn noise, single peak, centered at 0.5
+                _noise = (_noise - _noise_min)/(_noise_max - _noise_min)
+            elif mask_mode == None:
+                _noise = torch.zeros(size[0], size[1], mask_size, size[3], device=self.device)
+            log_spectro = torch.cat(
+                    (
+                        log_spectro[:,:,:-mask_size,:],
+                        _noise
+                    ),dim=2)
+        return log_spectro, pha, {'max':audio_max, 'min':audio_min, 'mean':mean, 'std':std}
 
     def encode_input(self, lr_audio, inst_map=None, hr_audio=None, feat_map=None):
         # hires audio for training
@@ -267,9 +258,9 @@ class Pix2PixHDModel(BaseModel):
     def forward(self, lr_audio, inst, hr_audio, feat, infer=False):
         # Encode Inputs
         lr_spectro, lr_pha, hr_spectro, hr_pha, feat_map, inst_map, hr_norm_param, lr_norm_param = self.encode_input(lr_audio, inst, hr_audio, feat)
-        if not self.opt.explicit_encoding and self.opt.input_nc>=2:
-            lr_spectro = torch.cat((lr_spectro, lr_pha), dim=1)
-            hr_spectro = torch.cat((hr_spectro, hr_pha), dim=1)
+        # if not self.opt.explicit_encoding and self.opt.input_nc>=2:
+        #     lr_spectro = torch.cat((lr_spectro, lr_pha), dim=1)
+        #     hr_spectro = torch.cat((hr_spectro, hr_pha), dim=1)
         # Fake Generation
         if self.use_features:
             if not self.opt.load_features:
@@ -314,8 +305,8 @@ class Pix2PixHDModel(BaseModel):
         # If all phase are generated correctly, loss_G_pha will be 0
         # If using STFT instead of MDCT, a cosine function can be used for evaluating the phase distance
         loss_G_pha = 0
-        if self.opt.input_nc>=2:
-            sr_pha = torch.sign(sr_result)[:,0,:,:].unsqueeze(1) if self.opt.explicit_encoding else sr_result[:,1,:,:].unsqueeze(1)
+        if self.opt.explicit_encoding:
+            sr_pha = torch.sign(sr_result[:,0,:,:]-sr_result[:,1,:,:]).unsqueeze(1)
             if self.opt.use_pha_loss:
                 loss_G_pha = (1-torch.cos(0.5*torch.pi*(sr_pha-hr_pha))).mean()
 
@@ -323,6 +314,10 @@ class Pix2PixHDModel(BaseModel):
         self.current_lable     = lr_spectro.detach().cpu().numpy()[0,0,:,:]
         self.current_generated = sr_result.detach().cpu().numpy()[0,0,:,:]
         self.current_real      = hr_spectro.detach().cpu().numpy()[0,0,:,:]
+        if self.opt.explicit_encoding:
+            self.current_lable     = 0.5*(lr_spectro[0,0,:,:]+lr_spectro[0,1,:,:]).detach().cpu().numpy()
+            self.current_generated = 0.5*(sr_result[0,0,:,:]+sr_result[0,1,:,:]).detach().cpu().numpy()
+            self.current_real      = 0.5*(hr_spectro[0,0,:,:]+hr_spectro[0,1,:,:]).detach().cpu().numpy()
         if self.opt.input_nc>=2:
             self.current_lable_pha     = torch.sign(lr_pha).detach().cpu().numpy()[0,0,:,:]
             self.current_generated_pha = torch.sign(sr_pha).detach().cpu().numpy()[0,0,:,:]

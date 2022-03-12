@@ -103,7 +103,7 @@ def eval_model():
         with torch.no_grad():
             sr_spectro, lr_pha, norm_param, lr_spectro = model.inference(lr_audio, None)
             up_ratio = opt.hr_sampling_rate / opt.lr_sampling_rate
-            sr_audio = imdct(log_mag=sr_spectro, pha=lr_pha, norm_param=norm_param, _imdct=_imdct, up_ratio=up_ratio)
+            sr_audio = imdct(spectro=sr_spectro, pha=lr_pha, norm_param=norm_param, _imdct=_imdct, up_ratio=up_ratio, explicit_encoding=opt.explicit_encoding)
             _mse,_snr_sr,_snr_lr,_ssnr_sr,_ssnr_lr,_pesq,_lsd = compute_matrics(hr_audio.squeeze(), lr_audio.squeeze(), sr_audio.squeeze(), opt)
             err.append(_mse)
             snr.append((_snr_lr, _snr_sr))

@@ -125,8 +125,8 @@ def compute_matrics(hr_audio,lr_audio,sr_audio,opt):
     device = sr_audio.device
     hr_audio = hr_audio.to(device)
     lr_audio = lr_audio.to(device)
-    # Normalize sr_audio
-    sr_audio = (hr_audio.max()-hr_audio.min())*sr_audio/(sr_audio.max()-sr_audio.min())
+    # Match sr_audio peak value to hr_audio peak value
+    sr_audio = (torch.max(hr_audio,dim=-1).values-torch.min(hr_audio,dim=-1).values).unsqueeze(1)*sr_audio/(torch.max(sr_audio,dim=-1).values-torch.min(sr_audio,dim=-1).values).unsqueeze(1)
     #sr_audio = (hr_audio-hr_audio.min())/(hr_audio.max()-hr_audio.min())
     #lr_audio = (lr_audio-lr_audio.min())/(lr_audio.max()-lr_audio.min())
 
@@ -134,8 +134,8 @@ def compute_matrics(hr_audio,lr_audio,sr_audio,opt):
     mse = ((sr_audio-hr_audio)**2).mean().item()
 
     # Calculate SNR
-    snr_sr = 10*torch.log10(torch.mean(hr_audio**2)/torch.mean((sr_audio-hr_audio)**2)).item()
-    snr_lr = 10*torch.log10(torch.mean(hr_audio**2)/torch.mean((lr_audio-hr_audio)**2)).item()
+    snr_sr = 10*torch.log10(torch.sum(hr_audio**2, dim=-1)/torch.sum((sr_audio-hr_audio)**2, dim=-1)).mean().item()
+    snr_lr = 10*torch.log10(torch.sum(hr_audio**2,dim=-1)/torch.sum((lr_audio-hr_audio)**2,dim=-1)).mean().item()
 
     # Calculate segmental SNR
     #ssnr_sr = pysepm.SNRseg(clean_speech=hr_audio.numpy(),  processed_speech=sr_audio.numpy(), fs=opt.hr_sampling_rate)

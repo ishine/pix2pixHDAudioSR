@@ -125,10 +125,10 @@ def compute_matrics(hr_audio,lr_audio,sr_audio,opt):
     device = sr_audio.device
     hr_audio = hr_audio.to(device)
     lr_audio = lr_audio.to(device)
-    # Normalize sr_audio and hr_audio
-    sr_audio = (sr_audio-sr_audio.min())/(sr_audio.max()-sr_audio.min())
-    hr_audio = (hr_audio-hr_audio.min())/(hr_audio.max()-hr_audio.min())
-    lr_audio = (lr_audio-lr_audio.min())/(lr_audio.max()-lr_audio.min())
+    # Normalize sr_audio
+    sr_audio = (hr_audio.max()-hr_audio.min())*sr_audio/(sr_audio.max()-sr_audio.min())
+    #sr_audio = (hr_audio-hr_audio.min())/(hr_audio.max()-hr_audio.min())
+    #lr_audio = (lr_audio-lr_audio.min())/(lr_audio.max()-lr_audio.min())
 
     # Calculate error
     mse = ((sr_audio-hr_audio)**2).mean().item()

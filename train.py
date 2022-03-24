@@ -77,7 +77,7 @@ total_steps = (start_epoch-1) * dataset_size + epoch_iter
 display_delta = total_steps % opt.display_freq
 print_delta = total_steps % opt.print_freq
 save_delta = total_steps % opt.save_latest_freq
-eval_delta = total_steps % opt.eval_freq
+eval_delta = total_steps % opt.eval_freq if opt.validation_split > 0 else -1
 
 # Safe ctrl-c
 end = False

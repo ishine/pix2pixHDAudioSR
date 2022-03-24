@@ -51,4 +51,21 @@ python train.py --name mdct_hifitts_pha2_G7L3 --dataroot /root/hi_fi_tts_v0/audi
 #G: 579710210  D: 5531522
 python train.py --name mdct_hifitts_pha2_G5L3 --dataroot /root/hi_fi_tts_v0/audio.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 2 --input_nc 2 --batchSize 32 --gpu_id 1 --nThreads 16 --mask --mask_mode mode2 --netG local --niter 10 --niter_decay 0 --fp16 --validation_split 0.01 --abs_spectro --center --explicit_encoding --n_blocks_global 5 --n_blocks_local 3
 #G: 428707074 D: 5531522
-python train.py --name mdct_hifitts_pha2_G9L2 --dataroot /root/hi_fi_tts_v0/audio.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 2 --input_nc 2 --batchSize 32 --gpu_id 1 --nThreads 16 --mask --mask_mode mode2 --netG local --niter 10 --niter_decay 0 --fp16 --validation_split 0.01 --abs_spectro --center --explicit_encoding --n_blocks_global 9 --n_blocks_local 2
+python train.py --name mdct_hifitts_pha2_G3L2 --dataroot /root/hi_fi_tts_v0/audio.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 2 --input_nc 2 --batchSize 32 --gpu_id 3 --nThreads 16 --mask --mask_mode mode2 --netG local --niter 10 --niter_decay 0 --fp16 --validation_split 0.01 --abs_spectro --center --explicit_encoding --n_blocks_global 3 --n_blocks_local 2
+# G: 277408770 D: 5531522
+# 295,168 per n_blocks_local
+
+python train.py --name mdct_hifitts_pha2_G3L2_48ngf --dataroot /root/hi_fi_tts_v0/audio.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 2 --input_nc 2 --batchSize 32 --gpu_id 3 --nThreads 16 --mask --mask_mode mode2 --netG local --niter 10 --niter_decay 0 --fp16 --validation_split 0.01 --abs_spectro --center --explicit_encoding --n_blocks_global 3 --n_blocks_local 2 --ngf 48
+# G: 156050690 D: 5531522
+
+python train.py --name mdct_hifitts_pha2_G3L2_32ngf --dataroot /root/hi_fi_tts_v0/audio.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 2 --input_nc 2 --batchSize 32 --gpu_id 3 --nThreads 16 --mask --mask_mode mode2 --netG local --niter 10 --niter_decay 0 --fp16 --validation_split 0.01 --abs_spectro --center --explicit_encoding --n_blocks_global 3 --n_blocks_local 2 --ngf 32
+# G: 69363202 D: 5531522
+
+python train.py --name mdct_hifitts_pha2_G3L2_24ngf --dataroot /root/hi_fi_tts_v0/audio.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 2 --input_nc 2 --batchSize 32 --gpu_id 2 --nThreads 16 --mask --mask_mode mode2 --netG local --niter 10 --niter_decay 0 --fp16 --validation_split 0.01 --abs_spectro --center --explicit_encoding --n_blocks_global 3 --n_blocks_local 2 --ngf 24
+# G: 39020930 D: 5531522
+
+python train.py --name mdct_hifitts_pha2_G3L2_16ngf --dataroot /root/hi_fi_tts_v0/audio.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 2 --input_nc 2 --batchSize 32 --gpu_id 0 --nThreads 16 --mask --mask_mode mode2 --netG local --niter 10 --niter_decay 0 --fp16 --validation_split 0.01 --abs_spectro --center --explicit_encoding --n_blocks_global 3 --n_blocks_local 2 --ngf 16
+# G: 17346306 D: 5531522
+
+python train.py --name mdct_hifitts_pha2_G3L2_8ngf --dataroot /root/hi_fi_tts_v0/audio.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 2 --input_nc 2 --batchSize 32 --gpu_id 2 --nThreads 16 --mask --mask_mode mode2 --netG local --niter 10 --niter_decay 0 --fp16 --validation_split 0.01 --abs_spectro --center --explicit_encoding --n_blocks_global 3 --n_blocks_local 2 --ngf 8
+# G: 4339330 D: 5531522

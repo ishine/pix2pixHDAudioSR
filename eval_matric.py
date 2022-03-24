@@ -82,8 +82,8 @@ for epoch in range(start_epoch, opt.niter+1):
             sr_audio = imdct(spectro=sr_spectro, pha=lr_pha, norm_param=norm_param, _imdct=_imdct, up_ratio=up_ratio, explicit_encoding=opt.explicit_encoding)
             _mse,_snr_sr,_snr_lr,_ssnr_sr,_ssnr_lr,_pesq,_lsd = compute_matrics(hr_audio.squeeze(), lr_audio.squeeze(), sr_audio.squeeze(), opt)
             err.append(_mse)
-            snr.append((_snr_lr, _snr_sr))
-            snr_seg.append((_ssnr_lr, _ssnr_sr))
+            snr.append(_snr_sr)
+            snr_seg.append(_ssnr_sr)
             pesq.append(_pesq)
             lsd.append(_lsd)
 

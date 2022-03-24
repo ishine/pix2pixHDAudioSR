@@ -80,7 +80,7 @@ for epoch in range(start_epoch, opt.niter+1):
             sr_spectro, lr_pha, norm_param, lr_spectro = model.module.inference(lr_audio, None)
             up_ratio = opt.hr_sampling_rate / opt.lr_sampling_rate
             sr_audio = imdct(spectro=sr_spectro, pha=lr_pha, norm_param=norm_param, _imdct=_imdct, up_ratio=up_ratio, explicit_encoding=opt.explicit_encoding)
-            _mse,_snr_sr,_snr_lr,_ssnr_sr,_ssnr_lr,_pesq,_lsd = compute_matrics(hr_audio.squeeze(), lr_audio.squeeze(), sr_audio.squeeze(), opt)
+            _mse,_snr_sr,_snr_lr,_ssnr_sr,_ssnr_lr,_pesq,_lsd = compute_matrics(hr_audio.squeeze(), lr_audio.squeeze(), 2*sr_audio.squeeze(), opt)
             err.append(_mse)
             snr.append(_snr_sr)
             snr_seg.append(_ssnr_sr)

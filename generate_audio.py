@@ -37,11 +37,11 @@ with torch.no_grad():
 # Convert to time series
 audio = []
 for m,p,n in zip(spectro_mag,spectro_pha,norm_params):
-    audio.append(imdct(spectro=m, pha=p, norm_param=n, _imdct=_imdct, up_ratio=opt.hr_sampling_rate / opt.lr_sampling_rate))
+    audio.append(2*imdct(spectro=m, pha=p, norm_param=n, _imdct=_imdct, up_ratio=opt.hr_sampling_rate / opt.lr_sampling_rate, explicit_encoding=opt.explicit_encoding))
 
 # Concatenate the audio
 audio = torch.cat(audio,dim=0).view(1,-1)
-print(audio.size())
+#print(audio.size())
 
 # Evaluate the matrics
 audio_len = data_loader.dataset.raw_audio.size(-1)
@@ -56,15 +56,21 @@ print('LSD: %.4f' % _lsd)
 
 # Generate visuals
 lr_mag, _, sr_mag, _, _, _, _, _ = model.module.encode_input(lr_audio=data_loader.dataset.lr_audio, hr_audio=audio)
+if opt.explicit_encoding:
+    lr_mag = 0.5*(lr_mag[:,0,:,:]+lr_mag[:,1,:,:])
+    sr_mag = 0.5*(sr_mag[:,0,:,:]+sr_mag[:,1,:,:])
 lr_spectro, lr_hist, _ = compute_visuals(sp=lr_mag.squeeze().detach().cpu().numpy(), abs=True)
 sr_spectro, sr_hist, _ = compute_visuals(sp=sr_mag.squeeze().detach().cpu().numpy(), abs=True)
-visuals = {'lable_spectro':        lr_spectro,
+visuals = {'lable_spectro':         lr_spectro,
             'generated_spectro':    sr_spectro,
             'lable_hist':           lr_hist,
             'generated_hist':       sr_hist}
 
 # Save files
 visualizer.display_current_results(visuals, 1, 1)
+with open(os.path.join(opt.checkpoints_dir, opt.name, 'metric.txt'),'w') as f:
+    f.write('MSE,SNR_SR,LSD\n')
+    f.write('%f,%f,%f'%(_mse,_snr_sr,_lsd))
 sr_path = os.path.join(opt.checkpoints_dir, opt.name, 'sr_audio.wav')
 lr_path = os.path.join(opt.checkpoints_dir, opt.name, 'lr_audio.wav')
 hr_path = os.path.join(opt.checkpoints_dir, opt.name, 'hr_audio.wav')

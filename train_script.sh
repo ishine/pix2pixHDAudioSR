@@ -69,3 +69,5 @@ python train.py --name mdct_hifitts_pha2_G3L2_16ngf --dataroot /root/hi_fi_tts_v
 
 python train.py --name mdct_hifitts_pha2_G3L2_8ngf --dataroot /root/hi_fi_tts_v0/audio.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 2 --input_nc 2 --batchSize 32 --gpu_id 2 --nThreads 16 --mask --mask_mode mode2 --netG local --niter 10 --niter_decay 0 --fp16 --validation_split 0.01 --abs_spectro --center --explicit_encoding --n_blocks_global 3 --n_blocks_local 2 --ngf 8
 # G: 4339330 D: 5531522
+
+python generate_audio.py --name pha2_G3L2_48_2x_gen --dataroot /root/VCTK-Corpus/wav48/p227/p227_004.wav --no_instance --no_vgg_loss --label_nc 0 --output_nc 2 --input_nc 2 --batchSize 4 --serial_batches --nThreads 0 --mask --mask_mode mode2 --netG local --validation_split 0 --load_pretrain ./checkpoints/hifitts_vctk_pha2_G3L2_48ngf_2x --gpu_id 2 --center --phase test --serial_batches --explicit_encoding --n_blocks_global 3 --n_blocks_local 2 --ngf 48 --lr_sampling_rate 24000

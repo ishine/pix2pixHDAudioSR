@@ -105,19 +105,26 @@ def imdct(spectro, pha, norm_param, _imdct, min_value=1e-7, up_ratio=1, explicit
     device = spectro.device
     spectro = torch.abs(spectro)*(norm_param['max'].to(device)-norm_param['min'].to(device))+norm_param['min'].to(device)
     #log_mag = log_mag*norm_param['std']+norm_param['mean']
+    spectro = aF.DB_to_amplitude(spectro.to(device),10,0.5)-min_value
     if explicit_encoding:
-        pha = torch.sign(spectro[...,0,:,:]-spectro[...,1,:,:])
-        spectro = aF.DB_to_amplitude(spectro.to(device),10,0.5)
-        spectro = (spectro[...,0,:,:]+spectro[...,1,:,:])
+        pha = pha.squeeze()
+        psudo_pha = torch.sign(spectro[...,0,:,:]-spectro[...,1,:,:])
+        spectro = spectro[...,0,:,:]+spectro[...,1,:,:]
+        if up_ratio > 1:
+            size = pha.size(-2)
+            pha = torch.cat((pha[...,:int(size*(1/up_ratio)),:],psudo_pha[...,int(size*(1/up_ratio)):,:]),dim=-2)
     else:
-        spectro = aF.DB_to_amplitude(spectro.to(device),10,0.5)-min_value
         if up_ratio > 1:
             size = pha.size(-2)
             psudo_pha = 2*torch.randint(low=0,high=2,size=pha.size(),device=device)-1
             pha = torch.cat((pha[...,:int(size*(1/up_ratio)),:],psudo_pha[...,int(size*(1/up_ratio)):,:]),dim=-2)
     # BCHW -> BWH
+    #print(spectro.shape)
     spectro = spectro*pha
-    audio = _imdct(spectro.squeeze(1).permute(0,2,1).contiguous())
+    if explicit_encoding:
+        audio = _imdct(spectro.permute(0,2,1).contiguous())
+    else:
+        audio = _imdct(spectro.squeeze(1).permute(0,2,1).contiguous())
     return audio
 
 def compute_matrics(hr_audio,lr_audio,sr_audio,opt):
@@ -126,7 +133,10 @@ def compute_matrics(hr_audio,lr_audio,sr_audio,opt):
     hr_audio = hr_audio.to(device)
     lr_audio = lr_audio.to(device)
     # Match sr_audio peak value to hr_audio peak value
-    sr_audio = (torch.max(hr_audio,dim=-1).values-torch.min(hr_audio,dim=-1).values).unsqueeze(1)*sr_audio/(torch.max(sr_audio,dim=-1).values-torch.min(sr_audio,dim=-1).values).unsqueeze(1)
+    sr_audio = (sr_audio-torch.mean(sr_audio, dim=-1, keepdim=True))/torch.std(sr_audio, dim=-1, keepdim=True)
+    sr_audio = sr_audio*torch.std(hr_audio, dim=-1, keepdim=True)+torch.mean(hr_audio, dim=-1, keepdim=True)
+    #hr_audio = (hr_audio-torch.mean(hr_audio, dim=-1, keepdim=True))/torch.std(hr_audio, dim=-1, keepdim=True)
+    #lr_audio = (lr_audio-torch.mean(lr_audio, dim=-1, keepdim=True))/torch.std(lr_audio, dim=-1, keepdim=True)
     #sr_audio = (hr_audio-hr_audio.min())/(hr_audio.max()-hr_audio.min())
     #lr_audio = (lr_audio-lr_audio.min())/(lr_audio.max()-lr_audio.min())
 

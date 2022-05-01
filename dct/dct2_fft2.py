@@ -10,12 +10,10 @@ import torch
 from torch.autograd import Function
 from torch import nn
 
-from dreamplace.ops.dct.discrete_spectral_transform import get_exact_expk as precompute_expk
+from discrete_spectral_transform import get_exact_expk as precompute_expk
 
-import dreamplace.ops.dct.dct2_fft2_cpp as dct2_fft2_cpp
-import dreamplace.configure as configure
-if configure.compile_configurations["CUDA_FOUND"] == "TRUE": 
-    import dreamplace.ops.dct.dct2_fft2_cuda as dct2_fft2_cuda
+from . import dct2_fft2_cpp as dct2_fft2_cpp
+from . import dct2_fft2_cuda as dct2_fft2_cuda
 
 
 class DCT2Function(Function):

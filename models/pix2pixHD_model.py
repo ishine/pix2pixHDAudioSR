@@ -7,17 +7,18 @@ from util.spectro_img import compute_visuals
 from util.util import kbdwin
 from .base_model import BaseModel
 from . import networks
-from .mdct import MDCT2
+from .mdct import MDCT2, IMDCT2
+from dct.dct_native import DCT_2N_native, IDCT_2N_native
 import torchaudio.functional as aF
 
 class Pix2PixHDModel(BaseModel):
     def name(self):
         return 'Pix2PixHDModel'
 
-    def init_loss_filter(self, use_gan_feat_loss, use_vgg_loss, use_pha_loss):
-        flags = (True, use_gan_feat_loss, use_vgg_loss, use_pha_loss, True, True)
-        def loss_filter(g_gan, g_gan_feat, g_vgg, g_pha, d_real, d_fake):
-            return [l for (l,f) in zip((g_gan,g_gan_feat,g_vgg,g_pha,d_real,d_fake),flags) if f]
+    def init_loss_filter(self, use_gan_feat_loss, use_vgg_loss, use_match_loss):
+        flags = (True, use_gan_feat_loss, use_vgg_loss, use_match_loss, True, True)
+        def loss_filter(g_gan, g_gan_feat, g_vgg, g_mat, d_real, d_fake):
+            return [l for (l,f) in zip((g_gan,g_gan_feat,g_vgg,g_mat,d_real,d_fake),flags) if f]
         return loss_filter
 
     def initialize(self, opt):
@@ -29,7 +30,10 @@ class Pix2PixHDModel(BaseModel):
         self.gen_features = self.use_features and not self.opt.load_features
         input_nc = opt.label_nc if opt.label_nc != 0 else opt.input_nc
         #self._mdct = MDCT(torch.kaiser_window(self.opt.win_length).cuda(), step_length=self.opt.hop_length, n_fft=self.opt.n_fft, center=self.opt.center, device = 'cuda').cuda()
-        self._mdct = MDCT2(n_fft=self.opt.n_fft, hop_length=self.opt.hop_length, win_length=self.opt.win_length, window=kbdwin, device=self.device)
+        self._dct = DCT_2N_native()
+        self._mdct = MDCT2(n_fft=self.opt.n_fft, hop_length=self.opt.hop_length, win_length=self.opt.win_length, window=kbdwin, device=self.device, dct_op=self._dct)
+        self._idct = IDCT_2N_native()
+        self._imdct = IMDCT2(n_fft=self.opt.n_fft, hop_length=self.opt.hop_length, win_length=self.opt.win_length, window=kbdwin, device=self.device, idct_op=self._idct)
         ##### define networks
         # Generator network
         netG_input_nc = input_nc
@@ -74,16 +78,18 @@ class Pix2PixHDModel(BaseModel):
             self.old_lr = opt.lr
 
             # define loss functions
-            self.loss_filter = self.init_loss_filter(not opt.no_ganFeat_loss, not opt.no_vgg_loss, opt.use_pha_loss)
+            self.loss_filter = self.init_loss_filter(not opt.no_ganFeat_loss, not opt.no_vgg_loss, opt.use_match_loss)
 
             self.criterionGAN = networks.GANLoss(use_lsgan=not opt.no_lsgan, tensor=self.Tensor)
             self.criterionFeat = torch.nn.L1Loss()
+            if opt.use_match_loss:
+                self.criterionMatch = torch.nn.L1Loss()
             if not opt.no_vgg_loss:
                 self.criterionVGG = networks.VGGLoss(self.gpu_ids)
 
 
             # Names so we can breakout loss
-            self.loss_names = self.loss_filter('G_GAN','G_GAN_Feat','G_VGG','G_pha','D_real', 'D_fake')
+            self.loss_names = self.loss_filter('G_GAN','G_GAN_Feat','G_VGG','G_mat','D_real', 'D_fake')
 
             # initialize optimizers
             # optimizer G
@@ -303,12 +309,13 @@ class Pix2PixHDModel(BaseModel):
 
         # Phase matching loss
         # If all phase are generated correctly, loss_G_pha will be 0
-        # If using STFT instead of MDCT, a cosine function can be used for evaluating the phase distance
-        loss_G_pha = 0
+        loss_G_match = 0
         if self.opt.explicit_encoding:
             sr_pha = torch.sign(sr_result[:,0,:,:]-sr_result[:,1,:,:]).unsqueeze(1)
-            if self.opt.use_pha_loss:
-                loss_G_pha = (1-torch.cos(0.5*torch.pi*(sr_pha-hr_pha))).mean()
+            if self.opt.use_match_loss:
+                sr = sr_result[:,0,:,:]-sr_result[:,1,:,:]
+                hr = hr_spectro[:,0,:,:]-hr_spectro[:,1,:,:]
+                loss_G_match = self.criterionMatch(sr, hr) * self.opt.lambda_mat
 
         # Register current samples
         self.current_lable     = lr_spectro.detach().cpu().numpy()[0,0,:,:]
@@ -319,16 +326,16 @@ class Pix2PixHDModel(BaseModel):
             self.current_generated = 0.5*(sr_result[0,0,:,:]+sr_result[0,1,:,:]).detach().cpu().numpy()
             self.current_real      = 0.5*(hr_spectro[0,0,:,:]+hr_spectro[0,1,:,:]).detach().cpu().numpy()
         if self.opt.input_nc>=2:
-            self.current_lable_pha     = torch.sign(lr_pha).detach().cpu().numpy()[0,0,:,:]
-            self.current_generated_pha = torch.sign(sr_pha).detach().cpu().numpy()[0,0,:,:]
-            self.current_real_pha      = torch.sign(hr_pha).detach().cpu().numpy()[0,0,:,:]
+            self.current_lable_pha     = (hr_pha-sr_pha).detach().cpu().numpy()[0,0,:,:]
+            self.current_generated_pha = sr_pha.detach().cpu().numpy()[0,0,:,:]
+            self.current_real_pha      = hr_pha.detach().cpu().numpy()[0,0,:,:]
         else:
             self.current_lable_pha = None
             self.current_generated_pha = None
             self.current_real_pha = None
 
         # Only return the fake_B image if necessary to save BW
-        return [ self.loss_filter( loss_G_GAN, loss_G_GAN_Feat, loss_G_VGG, loss_G_pha, loss_D_real, loss_D_fake ), None if not infer else sr_result ]
+        return [ self.loss_filter( loss_G_GAN, loss_G_GAN_Feat, loss_G_VGG, loss_G_match, loss_D_real, loss_D_fake ), None if not infer else sr_result ]
 
     def inference(self, lr_audio, inst):
         # Encode Inputs

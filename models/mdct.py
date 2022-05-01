@@ -1,4 +1,5 @@
 """
+Serial version of the MDCT.
 Adapted from https://github.com/nils-werner/mdct/
 I modified the original code from scipy+numpy to torch, and I made it into torch layers with GPU support.
 """
@@ -12,7 +13,6 @@ from . import spectrogram
 import functools
 #import debugpy
 #debugpy.listen(("localhost", 5678))
-
 class MDCT(torch.nn.Module):
     def __init__(self, window_function, step_length=None, n_fft=2048, center=True, device='cpu') -> None:
         super().__init__()
@@ -349,9 +349,8 @@ Using C++ CUDA library for GPU accelerated DCT computation.
 """
 from torch import nn
 from torch.nn.functional import pad, fold
-from dct.dct import DCT, IDCT
 class MDCT2(nn.Module):
-    def __init__(self, n_fft=2048, hop_length=None, win_length=None, window=None, center=True, pad_mode='constant', device='cuda') -> None:
+    def __init__(self, n_fft=2048, hop_length=None, win_length=None, window=None, center=True, pad_mode='constant', device='cuda', dct_op=None) -> None:
         super().__init__()
         self.n_fft = n_fft
         self.pad_mode = pad_mode
@@ -372,7 +371,8 @@ class MDCT2(nn.Module):
         assert self.win_length <= self.n_fft, 'Window lenth %d should be no more than fft length %d'%(self.win_length, self.n_fft)
         assert self.hop_length <= self.win_length, 'You hopped more than one frame'
 
-        self.dct = DCT()
+        assert callable(dct_op)
+        self.dct = dct_op
 
     def forward(self, signal):
         # Pad the signal to a proper length
@@ -400,6 +400,116 @@ class MDCT2(nn.Module):
 
 
 class IMDCT2(nn.Module):
+    def __init__(self, n_fft=2048, hop_length=None, win_length=None, window=None, center=True, pad_mode='constant', out_length=None,device='cuda', idct_op=None) -> None:
+        super().__init__()
+        self.n_fft = n_fft
+        self.pad_mode = pad_mode
+        self.device = device
+        self.hop_length = hop_length
+        self.center = center
+        self.out_length = out_length
+
+        # making window
+        if window is None:
+            window = torch.ones
+        if callable(window):
+            self.win_length = int(win_length)
+            self.window = window(self.win_length).to(self.device)
+        else:
+            self.window = window.to(self.device)
+            self.win_length = len(window)
+
+        assert self.win_length <= self.n_fft, 'Window lenth %d should be no more than fft length %d'%(self.win_length, self.n_fft)
+        assert self.hop_length <= self.win_length, 'You hopped more than one frame'
+
+        assert callable(idct_op)
+        self.idct = idct_op
+
+    def forward(self, signal):
+        assert signal.dim() == 3, 'Only tensors shaped in BHW are supported, got tensor of shape %s'%(str(signal.size()))
+        assert signal.size()[-1] == self.n_fft, 'The last dim of input tensor should match the n_fft. Expected %d ,got %d'%(self.n_fft, signal.size()[-1])
+
+        # Inverse transform at the last dim
+        signal = self.idct(signal.to(self.device))/2.0
+
+        # Remove padded zeros when doing dct
+        if self.n_fft > self.win_length:
+            signal = signal[...,:self.win_length]
+
+        # Apply windows to each pieces
+        signal = torch.mul(signal, self.window)
+
+        # Overlapping adding by fold()
+        out_len = (signal.size()[-2]-1) * self.hop_length + self.win_length
+        signal = fold(signal.transpose_(-1,-2), kernel_size=(1,self.win_length), stride=(1,self.hop_length), output_size=(1,out_len))
+
+        if self.center:
+            # extract the middle part
+            signal = signal[..., self.win_length//2:-self.win_length//2]
+
+        return signal if self.out_length is None else signal[...,:self.out_length]
+
+
+"""
+The exact version of the MDCT, using modified DCT-IV.
+Borrowed from MATLAB implementation.
+"""
+class MDCT4(nn.Module):
+    def __init__(self, n_fft=2048, hop_length=None, win_length=None, window=None, center=True, pad_mode='constant', device='cuda') -> None:
+        super().__init__()
+        self.n_fft = n_fft
+        self.pad_mode = pad_mode
+        self.device = device
+        self.hop_length = hop_length
+        self.center = center
+
+        # making window
+        if window is None:
+            window = torch.ones
+        if callable(window):
+            self.win_length = int(win_length)
+            self.window = window(self.win_length).to(self.device)
+        else:
+            self.window = window.to(self.device)
+            self.win_length = len(window)
+
+        assert self.win_length <= self.n_fft, 'Window lenth %d should be no more than fft length %d'%(self.win_length, self.n_fft)
+        assert self.hop_length <= self.win_length, 'You hopped more than one frame'
+
+        self.exp1 = torch.exp(-1j*torch.pi/self.n_fft*torch.arange(start=0, end=self.n_fft,step=1, dtype=torch.float64)).to(self.device)
+        self.exp2 = torch.exp(-1j*(torch.pi/(2*self.n_fft)+torch.pi/4)*torch.arange(start=1, end=self.n_fft, step=2, dtype=torch.float64)).to(self.device)
+
+    def forward(self, signal):
+        # Pad the signal to a proper length
+        signal_len = int(len(signal))
+        start_pad = 0
+        # Pad the signal so that the t-th frame is centered at time t * hop_length. Otherwise, the t-th frame begins at time t * hop_length.
+        if self.center:
+            start_pad = self.hop_length
+        additional_len = signal_len%self.hop_length
+        end_pad = start_pad
+        if additional_len:
+            end_pad = start_pad + self.hop_length - additional_len
+        signal = pad(signal, (start_pad,end_pad), mode=self.pad_mode)
+
+        # Slice the signal with overlapping
+        signal = signal.unfold(dimension=-1, size=self.win_length, step=self.hop_length)
+
+        # Apply windows to each pieces
+        signal = torch.mul(signal.to(self.device), self.window.to(self.device))
+
+        # Pad zeros for DCT
+        if self.n_fft > self.win_length:
+            signal = pad(signal, (0, self.n_fft-self.win_length), mode='constant')
+
+        signal = signal*self.exp1
+        signal = torch.fft.fft(signal)[...,:self.n_fft//2]
+        signal = self.exp2*signal
+
+        return torch.real(signal)
+
+
+class IMDCT4(nn.Module):
     def __init__(self, n_fft=2048, hop_length=None, win_length=None, window=None, center=True, pad_mode='constant', out_length=None,device='cuda') -> None:
         super().__init__()
         self.n_fft = n_fft
@@ -422,14 +532,17 @@ class IMDCT2(nn.Module):
         assert self.win_length <= self.n_fft, 'Window lenth %d should be no more than fft length %d'%(self.win_length, self.n_fft)
         assert self.hop_length <= self.win_length, 'You hopped more than one frame'
 
-        self.idct = IDCT()
+        self.exp1 = torch.exp(-1j*(torch.pi/(2*self.n_fft)+torch.pi/4)*torch.arange(start=1, end=self.n_fft, step=2, dtype=torch.float64)).to(self.device)
+        self.exp2 = torch.exp(-1j*torch.pi/(2*self.n_fft)*torch.arange(start=0, end=2*self.n_fft,step=2, dtype=torch.float64)).to(self.device)
 
     def forward(self, signal):
         assert signal.dim() == 3, 'Only tensors shaped in BHW are supported, got tensor of shape %s'%(str(signal.size()))
-        assert signal.size()[-1] == self.n_fft, 'The last dim of input tensor should match the n_fft. Expected %d ,got %d'%(self.n_fft, signal.size()[-1])
+        assert signal.size()[-1] == self.n_fft//2, 'The last dim of input tensor should match the n_fft. Expected %d ,got %d'%(self.n_fft, signal.size()[-1])
 
         # Inverse transform at the last dim
-        signal = self.idct(signal.to(self.device))/2.0
+        signal = self.exp1*signal.to(self.device)
+        signal = torch.fft.fft(signal,n=self.n_fft)
+        signal = torch.real(signal*self.exp2)
 
         # Remove padded zeros when doing dct
         if self.n_fft > self.win_length:
@@ -440,7 +553,7 @@ class IMDCT2(nn.Module):
 
         # Overlapping adding by fold()
         out_len = (signal.size()[-2]-1) * self.hop_length + self.win_length
-        signal = fold(signal.transpose_(-1,-2), kernel_size=(1,self.win_length), stride=(1,self.hop_length), output_size=(1,out_len))
+        signal = 4/self.n_fft*fold(signal.transpose_(-1,-2), kernel_size=(1,self.win_length), stride=(1,self.hop_length), output_size=(1,out_len))
 
         if self.center:
             # extract the middle part

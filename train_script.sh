@@ -79,3 +79,5 @@ python eval_matric.py --name eval_hifitts_vctk_phaloss_G3L2_48ngf_6x --dataroot 
 
 #wav48/p248/p248_011.wav
 python generate_audio.py --name gen_hifitts_vctk_phaloss_G3L2_48ngf_6x --dataroot /root/VCTK-Corpus/wav48/p225/p225_002.wav --no_instance --no_vgg_loss --label_nc 0 --output_nc 2 --input_nc 2 --batchSize 4 --serial_batches --nThreads 0 --mask --mask_mode mode2 --netG local --validation_split 0 --load_pretrain ./checkpoints/hifitts_vctk_phaloss_G3L2_48ngf_6x --gpu_id 2 --center --phase test --serial_batches --explicit_encoding --n_blocks_global 3 --n_blocks_local 2 --ngf 48
+
+python train.py --name VCTK_G3L2_48ngf --dataroot /root/VCTK-Corpus/wav48 --load_pretrain ./checkpoints/hifitts_vctk_pha2_G3L2_48ngf_6x --no_instance --no_vgg_loss --label_nc 0 --output_nc 2 --input_nc 2 --batchSize 64 --gpu_id 0 --nThreads 16 --mask --mask_mode mode2 --netG local --niter 50 --niter_decay 50 --fp16 --validation_split 0.01 --abs_spectro --center --explicit_encoding --n_blocks_global 3 --n_blocks_local 2 --ngf 48 --eval_freq 5000 --save_latest_freq 2000 --save_epoch_freq 20 --use_match_loss

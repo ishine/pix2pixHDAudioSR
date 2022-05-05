@@ -1,6 +1,7 @@
 import torch
 import torchaudio
 import os
+from numpy import sqrt
 
 from options.train_options import TrainOptions
 from data.data_loader import CreateDataLoader
@@ -19,7 +20,9 @@ model = create_model(opt)
 print('#audio segments = %d' % dataset_size)
 
 from util.util import kbdwin, imdct, compute_matrics
-_imdct = IMDCT2(window=kbdwin, win_length=opt.win_length, hop_length=opt.hop_length, n_fft=opt.n_fft, center=opt.center, out_length=opt.segment_length, device = 'cuda')
+from dct.dct import IDCT
+_idct = IDCT()
+_imdct = IMDCT2(window=kbdwin, win_length=opt.win_length, hop_length=opt.hop_length, n_fft=opt.n_fft, center=opt.center, out_length=opt.segment_length, device = 'cuda',idct_op=_idct)
 
 # Forward pass
 spectro_mag = []
@@ -35,12 +38,13 @@ with torch.no_grad():
         norm_params.append(norm_param)
 
 # Convert to time series
+up_ratio=opt.hr_sampling_rate / opt.lr_sampling_rate
 audio = []
 for m,p,n in zip(spectro_mag,spectro_pha,norm_params):
-    audio.append(2*imdct(spectro=m, pha=p, norm_param=n, _imdct=_imdct, up_ratio=opt.hr_sampling_rate / opt.lr_sampling_rate, explicit_encoding=opt.explicit_encoding))
+    audio.append(imdct(spectro=m, pha=p, norm_param=n, _imdct=_imdct, up_ratio=up_ratio, explicit_encoding=opt.explicit_encoding))
 
 # Concatenate the audio
-audio = torch.cat(audio,dim=0).view(1,-1)
+audio = sqrt(up_ratio-1)*torch.cat(audio,dim=0).view(1,-1)
 #print(audio.size())
 
 # Evaluate the matrics

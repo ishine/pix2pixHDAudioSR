@@ -16,9 +16,9 @@ from options.train_options import TrainOptions
 from util.visualizer import Visualizer
 from util.util import compute_matrics
 
-#import debugpy
-#debugpy.listen(("localhost", 5678))
-#debugpy.wait_for_client()
+# import debugpy
+# debugpy.listen(("localhost", 5678))
+# debugpy.wait_for_client()
 
 #os.environ['CUDA_VISIBLE_DEVICES']='0'
 os.environ['NCCL_P2P_DISABLE']='1'
@@ -156,8 +156,8 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         loss_dict = dict(zip(model.loss_names, losses))
 
         # Calculate final loss scalar
-        loss_D = (loss_dict['D_fake'] + loss_dict['D_real']) * 0.5
-        loss_G = loss_dict['G_GAN'] + loss_dict.get('G_mat',0) + loss_dict.get('G_GAN_Feat',0) + loss_dict.get('G_VGG',0)
+        loss_D = (loss_dict['D_fake'] + loss_dict['D_real']) * 0.5 + (loss_dict.get('D_fake_t',0) + loss_dict.get('D_real_t',0))*0.5
+        loss_G = loss_dict['G_GAN'] + loss_dict.get('G_mat',0) + loss_dict.get('G_GAN_Feat',0) + loss_dict.get('G_VGG',0) + loss_dict.get('G_GAN_t',0)
 
         ############### Backward Pass ####################
         # update generator weights

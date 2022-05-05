@@ -56,7 +56,7 @@ class Pix2PixHDModel(BaseModel):
             self.netD = networks.define_D(netD_input_nc, opt.ndf, opt.n_layers_D, opt.norm, use_sigmoid,
                                           opt.num_D, not opt.no_ganFeat_loss, gpu_ids=self.gpu_ids)
             if opt.use_hifigan_D:
-                from .ParallelWaveGAN.models.hifigan import HiFiGANMultiScaleMultiPeriodDiscriminator
+                from .ParallelWaveGAN.parallel_wavegan.models.hifigan import HiFiGANMultiScaleMultiPeriodDiscriminator
                 self.hifigan_D = HiFiGANMultiScaleMultiPeriodDiscriminator().to(self.device)
 
         ### Encoder network

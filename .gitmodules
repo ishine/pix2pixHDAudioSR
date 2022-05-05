@@ -1,0 +1,3 @@
+[submodule "models/ParallelWaveGAN"]
+	path = models/ParallelWaveGAN
+	url = https://github.com/kan-bayashi/ParallelWaveGAN.git

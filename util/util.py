@@ -112,6 +112,8 @@ def imdct(spectro, pha, norm_param, _imdct, min_value=1e-7, up_ratio=1, explicit
         spectro = spectro[...,0,:,:]+spectro[...,1,:,:]
         if up_ratio > 1:
             size = pha.size(-2)
+            if pha.dim() != 3:
+                pha = pha.unsqueeze(0)
             pha = torch.cat((pha[...,:int(size*(1/up_ratio)),:],psudo_pha[...,int(size*(1/up_ratio)):,:]),dim=-2)
     else:
         if up_ratio > 1:
@@ -122,9 +124,9 @@ def imdct(spectro, pha, norm_param, _imdct, min_value=1e-7, up_ratio=1, explicit
     #print(spectro.shape)
     spectro = spectro*pha
     if explicit_encoding:
-        audio = _imdct(spectro.permute(0,2,1).contiguous())
+        audio = _imdct(spectro.permute(0,2,1).contiguous())/2
     else:
-        audio = _imdct(spectro.squeeze(1).permute(0,2,1).contiguous())
+        audio = _imdct(spectro.squeeze(1).permute(0,2,1).contiguous())/2
     return audio
 
 def compute_matrics(hr_audio,lr_audio,sr_audio,opt):

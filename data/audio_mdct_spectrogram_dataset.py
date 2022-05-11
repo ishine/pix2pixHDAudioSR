@@ -105,9 +105,11 @@ class AudioMDCTSpectrogramTestDataset(BaseDataset):
             self.raw_audio = []
             print("load audio failed")
             exit(0)
-        if not opt.is_lr_input:
+        if opt.is_lr_input:
+            self.lr_audio = aF.resample(waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.hr_sampling_rate)
+        else:
             self.lr_audio = aF.resample(waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.lr_sampling_rate)
-        self.lr_audio = aF.resample(waveform=self.lr_audio, orig_freq=self.lr_sampling_rate, new_freq=self.hr_sampling_rate)
+            self.lr_audio = aF.resample(waveform=self.lr_audio, orig_freq=self.lr_sampling_rate, new_freq=self.hr_sampling_rate)
         self.seg_audio = self.seg_pad_audio(self.lr_audio)
 
     def __len__(self):

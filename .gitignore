@@ -1,5 +1,6 @@
 debug*
 checkpoints/
+generated/
 results/
 build/
 dist/
@@ -52,3 +53,4 @@ eval3.sh
 gen2.sh
 gen1.sh
 gen0.sh
+demo.sh

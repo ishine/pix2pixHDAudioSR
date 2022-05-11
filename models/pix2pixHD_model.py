@@ -1,4 +1,5 @@
 import numpy as np
+import scipy as sp
 import torch
 import os
 from torch.autograd import Variable
@@ -31,10 +32,12 @@ class Pix2PixHDModel(BaseModel):
         input_nc = opt.label_nc if opt.label_nc != 0 else opt.input_nc
 
         ##### define mdct and imdct
+        self.up_ratio = self.opt.hr_sampling_rate / self.opt.lr_sampling_rate
+        self.window = kbdwin(self.opt.win_length).to(self.device)
         self._dct = DCT_2N_native()
-        self._mdct = MDCT2(n_fft=self.opt.n_fft, hop_length=self.opt.hop_length, win_length=self.opt.win_length, window=kbdwin, device=self.device, dct_op=self._dct)
+        self._mdct = MDCT2(n_fft=self.opt.n_fft, hop_length=self.opt.hop_length, win_length=self.opt.win_length, window=self.window, device=self.device, dct_op=self._dct)
         self._idct = IDCT_2N_native()
-        self._imdct = IMDCT2(n_fft=self.opt.n_fft, hop_length=self.opt.hop_length, win_length=self.opt.win_length, window=kbdwin, device=self.device, idct_op=self._idct)
+        self._imdct = IMDCT2(n_fft=self.opt.n_fft, hop_length=self.opt.hop_length, win_length=self.opt.win_length, window=self.window, device=self.device, idct_op=self._idct)
 
         ##### define networks
         # Generator network
@@ -58,6 +61,8 @@ class Pix2PixHDModel(BaseModel):
             if opt.use_hifigan_D:
                 from .ParallelWaveGAN.parallel_wavegan.models.hifigan import HiFiGANMultiScaleMultiPeriodDiscriminator
                 self.hifigan_D = HiFiGANMultiScaleMultiPeriodDiscriminator().to(self.device)
+            if opt.use_time_D:
+                self.time_D = networks.define_D(2, opt.ndf, opt.n_layers_D, opt.norm, use_sigmoid, opt.num_D, False, gpu_ids=self.gpu_ids)
 
         ### Encoder network
         if self.gen_features:
@@ -74,6 +79,10 @@ class Pix2PixHDModel(BaseModel):
                 self.load_network(self.netD, 'D', opt.which_epoch, pretrained_path)
             if self.gen_features:
                 self.load_network(self.netE, 'E', opt.which_epoch, pretrained_path)
+            if opt.use_hifigan_D:
+                self.load_network(self.hifigan_D, 'hifigan_D', opt.which_epoch, pretrained_path)
+            if opt.use_time_D:
+                self.load_network(self.time_D, 'time_D', opt.which_epoch, pretrained_path)
 
         # set loss functions and optimizers
         if self.isTrain:
@@ -84,12 +93,12 @@ class Pix2PixHDModel(BaseModel):
             self.old_lr = opt.lr
 
             # define loss functions
-            self.loss_filter = self.init_loss_filter(not opt.no_ganFeat_loss, not opt.no_vgg_loss, opt.use_match_loss, opt.use_hifigan_D)
+            self.loss_filter = self.init_loss_filter(not opt.no_ganFeat_loss, not opt.no_vgg_loss, opt.use_match_loss, opt.use_hifigan_D or opt.use_time_D)
 
             self.criterionGAN = networks.GANLoss(use_lsgan=not opt.no_lsgan, tensor=self.Tensor)
             self.criterionFeat = torch.nn.L1Loss()
             if opt.use_match_loss:
-                self.criterionMatch = torch.nn.L1Loss()
+                self.criterionMatch = torch.nn.MSELoss()
             if not opt.no_vgg_loss:
                 self.criterionVGG = networks.VGGLoss(self.gpu_ids)
 
@@ -125,11 +134,18 @@ class Pix2PixHDModel(BaseModel):
             params = list(self.netD.parameters())
             if self.opt.use_hifigan_D:
                 params += list(self.hifigan_D.parameters())
+            if self.opt.use_time_D:
+                params += list(self.time_D.parameters())
             print('Total number of parameters of D: %d' % (sum([param.numel() for param in params])))
             self.optimizer_D = torch.optim.Adam(params, lr=opt.lr, betas=(opt.beta1, 0.999))
 
-    def mdct(self, audio, mask=False):
-        spectro = self._mdct(audio.to(self.device)).unsqueeze(1).permute(0,1,3,2)
+    def to_spectro(self, audio, mask=False):
+        if self.opt.use_time_D:
+            spectro, frames = self._mdct(audio.to(self.device),True)
+            spectro = spectro.unsqueeze(1).permute(0,1,3,2)
+        else:
+            spectro = self._mdct(audio.to(self.device)).unsqueeze(1).permute(0,1,3,2)
+            frames = None
         if self.opt.explicit_encoding:
             neg = 0.5*(torch.abs(spectro)-spectro)
             pos = spectro+neg
@@ -180,8 +196,7 @@ class Pix2PixHDModel(BaseModel):
         if mask:
             # mask the lr spectro so that it does not learn from garbage infomation
             size = log_spectro.size()
-            up_ratio = self.opt.hr_sampling_rate / self.opt.lr_sampling_rate
-            mask_size = int(size[2]*(1-1/up_ratio))
+            mask_size = int(size[2]*(1-1/self.up_ratio))
 
             # fill the blank mask with noise
             _noise = torch.randn(size[0], size[1], mask_size, size[3], device=self.device)
@@ -209,34 +224,44 @@ class Pix2PixHDModel(BaseModel):
                         log_spectro[:,:,:-mask_size,:],
                         _noise
                     ),dim=2)
-        return log_spectro, pha, {'max':audio_max, 'min':audio_min, 'mean':mean, 'std':std}
+        return log_spectro, pha, {'max':audio_max, 'min':audio_min, 'mean':mean, 'std':std, 'frames':frames}
 
-    def imdct(self, log_spectro, norm_param, pha=None):
-        device = log_spectro.device
-        up_ratio = self.opt.hr_sampling_rate / self.opt.lr_sampling_rate
-        spectro = torch.abs(log_spectro)*(norm_param['max'].to(device)-norm_param['min'].to(device))+norm_param['min'].to(device)
+    def denormalize(self, log_spectro, norm_param):
+        spectro = torch.abs(log_spectro)*(norm_param['max'].to(self.device)-norm_param['min'].to(self.device))+norm_param['min'].to(self.device)
         #log_mag = log_mag*norm_param['std']+norm_param['mean']
-        spectro = aF.DB_to_amplitude(spectro.to(device),10,0.5)-self.opt.min_value
+        return aF.DB_to_amplitude(spectro.to(self.device),10,0.5)-self.opt.min_value
+
+    def to_audio(self, log_spectro, norm_param, pha=None):
+        spectro = self.denormalize(log_spectro, norm_param)
         if self.opt.explicit_encoding:
             spectro = (spectro[...,0,:,:]-spectro[...,1,:,:])/(2*self.opt.alpha-1)
         else:
-            if up_ratio > 1:
+            if self.up_ratio > 1:
                 size = pha.size(-2)
-                psudo_pha = 2*torch.randint(low=0,high=2,size=pha.size(),device=device)-1
-                pha = torch.cat((pha[...,:int(size*(1/up_ratio)),:],psudo_pha[...,int(size*(1/up_ratio)):,:]),dim=-2)
+                psudo_pha = 2*torch.randint(low=0,high=2,size=pha.size(),device=self.device)-1
+                pha = torch.cat((pha[...,:int(size*(1/self.up_ratio)),:],psudo_pha[...,int(size*(1/self.up_ratio)):,:]),dim=-2)
                 spectro = spectro*pha
 
         if self.opt.explicit_encoding:
             audio = self._imdct(spectro.permute(0,2,1).contiguous())
         else:
             audio = self._imdct(spectro.squeeze(1).permute(0,2,1).contiguous())
-        return np.sqrt(up_ratio-1)*audio
+        return np.sqrt(self.up_ratio-1)*audio
+
+    def to_frames(self, log_spectro, norm_param):
+        spectro = self.denormalize(log_spectro, norm_param)
+        if self.opt.explicit_encoding:
+            spectro = (spectro[...,0,:,:]-spectro[...,1,:,:])/(2*self.opt.alpha-1)
+        else:
+            return None
+        frames = self._idct(spectro.permute(0,2,1).contiguous())
+        return frames
 
     def encode_input(self, lr_audio, inst_map=None, hr_audio=None, feat_map=None):
         # hires audio for training
         if hr_audio is not None:
             with torch.no_grad():
-                hr_spectro, hr_pha, hr_norm_param = self.mdct(hr_audio, mask = False)
+                hr_spectro, hr_pha, hr_norm_param = self.to_spectro(hr_audio, mask = False)
             #hr_spectro = Variable(hr_spectro.data.cuda())
         else:
             hr_spectro = None
@@ -244,7 +269,7 @@ class Pix2PixHDModel(BaseModel):
             hr_norm_param = None
 
         with torch.no_grad():
-            lr_spectro, lr_pha, lr_norm_param = self.mdct(lr_audio, mask = True)
+            lr_spectro, lr_pha, lr_norm_param = self.to_spectro(lr_audio, mask = True)
         #lr_spectro = lr_spectro.data.cuda()
 
         """ if self.opt.label_nc == 0:
@@ -286,7 +311,15 @@ class Pix2PixHDModel(BaseModel):
         else:
             return self.netD.forward(input_concat)
 
-    def discriminate_T(self, input, norm_param=None, pha=None, is_spectro=True):
+    def discriminate_time_D(self, label_spectro, test_spectro):
+        '''Time domain discriminator'''
+        # notice the test_image is detached, hence it wont backward to G networks.
+        label_spectro = aF.amplitude_to_DB(torch.abs(label_spectro), 20, self.opt.min_value, 1)
+        test_spectro = aF.amplitude_to_DB(torch.abs(test_spectro.detach()), 20, self.opt.min_value, 1)
+        input_concat = torch.cat((label_spectro, test_spectro), dim=1)
+        return self.time_D.forward(input_concat)
+
+    def discriminate_hifi(self, input, norm_param=None, pha=None, is_spectro=True):
         '''Time domain discriminator using hifi_gan_D'''
         # input shape [B 1 T]
         if is_spectro:
@@ -318,23 +351,42 @@ class Pix2PixHDModel(BaseModel):
         pred_fake_pool = self.discriminate_F(lr_spectro, sr_result, use_pool=True)
         loss_D_fake = self.criterionGAN(pred_fake_pool, False)
 
-        _pred_fake_time = self.discriminate_T(sr_result.detach(), norm_param=lr_norm_param, is_spectro=True)
-        loss_D_fake_time = self.criterionGAN(_pred_fake_time, False)*self.opt.lambda_time
-
         # Real Detection and Loss
         pred_real = self.discriminate_F(lr_spectro, hr_spectro)
         loss_D_real = self.criterionGAN(pred_real, True)
-
-        pred_real_time = self.discriminate_T(hr_audio, norm_param=hr_norm_param, is_spectro=False)
-        loss_D_real_time = self.criterionGAN(pred_real_time, True)*self.opt.lambda_time
 
         # GAN loss (Fake Passability Loss)
         # make a new input pair without detaching, the loss will hence backward to G
         pred_fake = self.netD.forward(torch.cat((lr_spectro, sr_result), dim=1))
         loss_G_GAN = self.criterionGAN(pred_fake, True)
 
-        pred_fake_time = self.discriminate_T(sr_result, norm_param=lr_norm_param, is_spectro=True)
-        loss_G_GAN_time = self.criterionGAN(pred_fake_time, True)*self.opt.lambda_time
+        # Time domain GAN, including hifi_gan_D and D on frames
+        loss_G_GAN_time = 0
+        loss_D_real_time = 0
+        loss_D_fake_time = 0
+
+        if self.opt.use_hifigan_D:
+            pred_fake_time = self.discriminate_hifi(sr_result, norm_param=lr_norm_param, is_spectro=True)
+            loss_G_GAN_time += self.criterionGAN(pred_fake_time, True)*self.opt.lambda_time
+            pred_real_time = self.discriminate_hifi(hr_audio.detach(), is_spectro=False)
+            loss_D_real_time += self.criterionGAN(pred_real_time, True)*self.opt.lambda_time
+            _pred_fake_time = self.discriminate_hifi(sr_result.detach(), norm_param=lr_norm_param, is_spectro=True)
+            loss_D_fake_time += self.criterionGAN(_pred_fake_time, False)*self.opt.lambda_time
+        if self.opt.use_time_D:
+            sr_frames = np.sqrt(self.up_ratio-1)*self.window*self.to_frames(sr_result,lr_norm_param).unsqueeze(1)
+            lr_frames = lr_norm_param['frames'].unsqueeze(1)
+            hr_frames = hr_norm_param['frames'].unsqueeze(1)
+
+            pred_fake_frames = self.discriminate_time_D(lr_frames, sr_frames)
+            loss_D_fake_time += self.criterionGAN(pred_fake_frames, False)*self.opt.lambda_time
+
+            pred_real_frames = self.discriminate_time_D(lr_frames, hr_frames)
+            loss_D_real_time += self.criterionGAN(pred_real_frames, True)*self.opt.lambda_time
+
+            _pred_fake_frames = self.time_D.forward(torch.cat((lr_frames, sr_frames), dim=1))
+            loss_G_GAN_time += self.criterionGAN(_pred_fake_frames, True)*self.opt.lambda_time
+
+
         # GAN feature matching loss
         loss_G_GAN_Feat = 0
         if not self.opt.no_ganFeat_loss:
@@ -356,9 +408,11 @@ class Pix2PixHDModel(BaseModel):
         if self.opt.explicit_encoding:
             sr_pha = torch.sign(sr_result[:,0,:,:]-sr_result[:,1,:,:]).unsqueeze(1)
             if self.opt.use_match_loss:
-                sr = sr_result[:,0,:,:]-sr_result[:,1,:,:]
-                hr = hr_spectro[:,0,:,:]-hr_spectro[:,1,:,:]
-                loss_G_match = self.criterionMatch(sr, hr) * self.opt.lambda_mat
+                half = self.opt.win_length//2
+                sr_frames = self.to_frames(sr_result,lr_norm_param)
+                a = sr_frames[...,:-1,half:]*self.window[:half]
+                b = sr_frames[...,1:,:half]*self.window[half:]
+                loss_G_match = self.criterionMatch(a,b) * self.opt.lambda_mat
 
         # Register current samples
         self.current_lable     = lr_spectro.detach().cpu().numpy()[0,0,:,:]
@@ -459,6 +513,10 @@ class Pix2PixHDModel(BaseModel):
         self.save_network(self.netD, 'D', which_epoch, self.gpu_ids)
         if self.gen_features:
             self.save_network(self.netE, 'E', which_epoch, self.gpu_ids)
+        if self.opt.use_hifigan_D:
+            self.save_network(self.hifigan_D, 'hifigan_D', which_epoch, self.gpu_ids)
+        if self.opt.use_time_D:
+            self.save_network(self.time_D, 'time_D', which_epoch, self.gpu_ids)
 
     def update_fixed_params(self):
         # after fixing the global generator for a number of iterations, also start finetuning it

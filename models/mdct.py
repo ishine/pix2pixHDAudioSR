@@ -374,7 +374,7 @@ class MDCT2(nn.Module):
         assert callable(dct_op)
         self.dct = dct_op
 
-    def forward(self, signal):
+    def forward(self, signal, return_ola=False):
         # Pad the signal to a proper length
         signal_len = int(len(signal))
         start_pad = 0
@@ -392,11 +392,15 @@ class MDCT2(nn.Module):
 
         # Apply windows to each pieces
         signal = torch.mul(signal.to(self.device), self.window.to(self.device))
+        if return_ola:
+            _signal = signal.clone()
 
         # Pad zeros for DCT
         if self.n_fft > self.win_length:
             signal = pad(signal, (0, self.n_fft-self.win_length), mode='constant')
-        return self.dct(signal)
+        signal = self.dct(signal)
+
+        return (signal, _signal) if return_ola else signal
 
 
 class IMDCT2(nn.Module):

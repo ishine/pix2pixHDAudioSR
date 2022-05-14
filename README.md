@@ -8,6 +8,8 @@ This is the code repository for my bachelor's degree Final Year Project design. 
 
 Instead of using Mel-spectrogram, I proposed to use **MDCT spectrogram** as the generation target, which is real-valued and phase-aware. It can be seen as the "DCT" version of STFT. More importantly, you can converted MDCT spectrogram back to raw waveform immediately *without using any Vocoder or Griffin-Lim algorithm*.
 
+You can find some generated samples in `./generated` folder with corresponding training settings in `opt.txt`
+
 ## pix2pixHD for spectrograms generation
 ![network](imgs/network.png)
 
@@ -16,7 +18,9 @@ This repo is based on [official pix2pixHD implementation](https://github.com/NVI
 The modtivation of this project is I notice the super-resolution task in time-freq domain is more like a Image Completion task: We can use cGANs to fill up the missing high-freq component according to the low-freq condition. So a adopted pix2pixHD GAN. And I use the low-res spectrogram as input and high-res spectrograms as label, performing SR like Image-to-Image translation.
 
 ### Audio datasets
-See implementation in `data.audio_dataset.AudioDataset`. It has two mode to search for training audio files with the arg `--dataroot`: 1) you feed in a path to audio files, or 2) you feed in a path to a csv file recording path to audio files,  like this:
+This project is trained on [VCTK](https://datashare.ed.ac.uk/handle/10283/3443) (target) and [HiFi-TTS](https://www.openslr.org/109/) (pre-training).
+
+Audio dataset implementation is in `data.audio_dataset.AudioDataset`. It has two mode to search for training audio files with the arg `--dataroot`: 1) you feed in a path to audio files, or 2) you feed in a path to a csv file recording path to audio files,  like this:
 ```sh
 $ cat /root/VCTK-Corpus/train.csv | head -n 10
 wav48/p343/p343_294.wav
@@ -39,7 +43,7 @@ find -iname "*.flac" > audio.csv
 
 The second mode is highly recommanded, since the first mode will walk through the given path and it is extremely slow when there are too many files.
 
-The `data.audio_dataset.AudioDataset` will randomly cut a segment of audio if the file is longer than arg setting `--segment_length` or pad zeros if it shorter. Since audio super-resolution requires paired data (LR and HR waveform), the input will be re-sampled to a lower rate, then re-sampled to target rate to get LR waveform. Such a process makes the LR waveform and the HR waveform in the same length.
+The `data.audio_dataset.AudioDataset` will randomly cut a segment of audio if the file is longer than arg setting `--segment_length` or pad zeros if it shorter. The audio super-resolution requires paired data (LR and HR waveform), as for LR samples, they will be re-sampled to a lower rate, then re-sampled to target rate to get LR waveform. Such a process makes the LR waveform and the HR waveform in the similar length. Samples in a pair will be trimed or padded if the length is not matched.
 
 I also modified the input encoding process. Then the model will convert all the audio to spectrograms in batches, with CUDA acceleration if GPUs are available.
 

@@ -7,11 +7,11 @@ import os
 def CreateDataset(opt):
     dataset = None
     if opt.phase == 'train':
-        from data.audio_mdct_spectrogram_dataset import AudioMDCTSpectrogramDataset
-        dataset = AudioMDCTSpectrogramDataset(opt)
+        from data.audio_dataset import AudioDataset
+        dataset = AudioDataset(opt)
     elif opt.phase == 'test':
-        from data.audio_mdct_spectrogram_dataset import AudioMDCTSpectrogramTestDataset
-        dataset = AudioMDCTSpectrogramTestDataset(opt)
+        from data.audio_dataset import AudioTestDataset
+        dataset = AudioTestDataset(opt)
 
     print("dataset [%s] was created" % (dataset.name()))
     #dataset.initialize(opt)

@@ -50,11 +50,11 @@ Wikipedia's definition:
 
 The forward transform is given by:
 
-$X_{k}=\sum _{{n=0}}^{{2N-1}}x_{n}\cos \left[{\frac  {\pi }{N}}\left(n+{\frac  {1}{2}}+{\frac  {N}{2}}\right)\left(k+{\frac  {1}{2}}\right)\right]$,
+<img src="https://render.githubusercontent.com/render/math?math=X_{k}=\sum _{{n=0}}^{{2N-1}}x_{n}\cos \left[{\frac  {\pi }{N}}\left(n+{\frac  {1}{2}}+{\frac  {N}{2}}\right)\left(k+{\frac  {1}{2}}\right)\right]">
 
 and the inverse is
 
-$y_{n}={\frac  {1}{N}}\sum _{{k=0}}^{{N-1}}X_{k}\cos \left[{\frac  {\pi }{N}}\left(n+{\frac  {1}{2}}+{\frac  {N}{2}}\right)\left(k+{\frac  {1}{2}}\right)\right]$
+<img src="https://render.githubusercontent.com/render/math?math=y_{n}={\frac  {1}{N}}\sum _{{k=0}}^{{N-1}}X_{k}\cos \left[{\frac  {\pi }{N}}\left(n+{\frac  {1}{2}}+{\frac  {N}{2}}\right)\left(k+{\frac  {1}{2}}\right)\right]">
 
 I followed the MATLAB's implementation of `mdct()` and `imdct()` and made a PyTorch version with `torch.fft` api, so that they are all back-propagatable. They can convert signal in batches, so it is super fast. It is loacted in `model.mdct.MDCT4` and `model.mdct.IMDCT4`.
 

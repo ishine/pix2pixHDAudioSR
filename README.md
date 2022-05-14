@@ -9,6 +9,7 @@ This is the code repository for my bachelor's degree Final Year Project design. 
 Instead of using Mel-spectrogram, I proposed to use **MDCT spectrogram** as the generation target, which is real-valued and phase-aware. It can be seen as the "DCT" version of STFT. More importantly, you can converted MDCT spectrogram back to raw waveform immediately *without using any Vocoder or Griffin-Lim algorithm*.
 
 ## pix2pixHD for spectrograms generation
+![network](imgs/network.png)
 This repo is based on [official pix2pixHD implementation](https://github.com/NVIDIA/pix2pixHD). I did not modify the backbone network and keep it as original. However, since it is proposed for image generation and some of them are not suitable for audio spectrograms, some code is deprecated, such as Encoder network, VGG loss and image pre-processing (scale, rotate...).
 
 The modtivation of this project is I notice the super-resolution task in time-freq domain is more like a Image Completion task: We can use cGANs to fill up the missing high-freq component according to the low-freq condition. So a adopted pix2pixHD GAN. And I use the low-res spectrogram as input and high-res spectrograms as label, performing SR like Image-to-Image translation.

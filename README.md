@@ -9,7 +9,9 @@ This is the code repository for my bachelor's degree Final Year Project design. 
 Instead of using Mel-spectrogram, I proposed to use **MDCT spectrogram** as the generation target, which is real-valued and phase-aware. It can be seen as the "DCT" version of STFT. More importantly, you can converted MDCT spectrogram back to raw waveform immediately *without using any Vocoder or Griffin-Lim algorithm*.
 
 You can find some generated samples in `./generated` folder with corresponding training settings in `opt.txt`
-
+[HR](generated/GEN_VCTK_G3L2_48ngf/hr_audio.wav)
+[LR](generated/GEN_VCTK_G3L2_48ngf/lr_audio.wav)
+[SR](generated/GEN_VCTK_G3L2_48ngf/sr_audio.wav)
 ## pix2pixHD for spectrograms generation
 ![network](imgs/network.png)
 

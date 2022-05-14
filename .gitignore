@@ -44,7 +44,6 @@ test/data/legacy_serialized.pt
 *~
 .gitignore
 pix2pixhd.tar.gz
-*.wav
 eval0.sh
 eval1.sh
 eval2.sh

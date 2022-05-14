@@ -10,6 +10,7 @@ Instead of using Mel-spectrogram, I proposed to use **MDCT spectrogram** as the 
 
 ## pix2pixHD for spectrograms generation
 ![network](imgs/network.png)
+
 This repo is based on [official pix2pixHD implementation](https://github.com/NVIDIA/pix2pixHD). I did not modify the backbone network and keep it as original. However, since it is proposed for image generation and some of them are not suitable for audio spectrograms, some code is deprecated, such as Encoder network, VGG loss and image pre-processing (scale, rotate...).
 
 The modtivation of this project is I notice the super-resolution task in time-freq domain is more like a Image Completion task: We can use cGANs to fill up the missing high-freq component according to the low-freq condition. So a adopted pix2pixHD GAN. And I use the low-res spectrogram as input and high-res spectrograms as label, performing SR like Image-to-Image translation.
@@ -50,11 +51,15 @@ Wikipedia's definition:
 
 The forward transform is given by:
 
+<p align='center'>
 <img src="https://render.githubusercontent.com/render/math?math=X_{k}=\sum _{{n=0}}^{{2N-1}}x_{n}\cos \left[{\frac  {\pi }{N}}\left(n+{\frac  {1}{2}}+{\frac  {N}{2}}\right)\left(k+{\frac  {1}{2}}\right)\right]">
+</p>
 
 and the inverse is
 
+<p align='center'>
 <img src="https://render.githubusercontent.com/render/math?math=y_{n}={\frac  {1}{N}}\sum _{{k=0}}^{{N-1}}X_{k}\cos \left[{\frac  {\pi }{N}}\left(n+{\frac  {1}{2}}+{\frac  {N}{2}}\right)\left(k+{\frac  {1}{2}}\right)\right]">
+</p>
 
 I followed the MATLAB's implementation of `mdct()` and `imdct()` and made a PyTorch version with `torch.fft` api, so that they are all back-propagatable. They can convert signal in batches, so it is super fast. It is loacted in `model.mdct.MDCT4` and `model.mdct.IMDCT4`.
 
@@ -163,4 +168,4 @@ Remember to use `--phase test` arg to enable `AudioTestDataset` dataloader to lo
 ## Acknowledgments & Announcement
 This code is built based on [official pix2pixHD implementation](https://github.com/NVIDIA/pix2pixHD). The DCT implementation is based on [DREAMPlace](https://github.com/limbo018/DREAMPlace). Thank you guys!😘
 
-This is just my bachelor's degree Final Year Project. And since all of these are done by myself, I do not have much time on writing comments or beautify the code. I know it is painful when you read my sh💩t code without comments. I am sorry about that😥. If you have any questions / suggestion, or found any bugs, welcome to raise a issue / PR. I can understand English 🇬🇧 and Chinese 🇨🇳. 😊
+This is just my bachelor's degree Final Year Project. And since all of these are done by myself, I do not have much time on writing comments or beautify the code. I know it is painful when you read my sh💩t code without comments. I am sorry about that😥. If you have any questions / suggestion, or found any bugs, welcome to raise a issue / PR. I can understand English and Chinese.😊

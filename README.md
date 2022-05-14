@@ -1,14 +1,12 @@
 # Speech Super-resolution with pix2pixHD Framework
 ## Introduction
 <p align='center'>  
-  <img src='imgs/HR_LR_SR.png' width='400'/>
+  <img src='imgs/HR_LR_SR.png' width='300'/>
+  <img src='imgs/result.png' width='250'/>
 </p>
 This is the code repository for my bachelor's degree Final Year Project design. I use the framework of pix2pixHD for the generation of high-resolution audio spectra.
 
 Instead of using Mel-spectrogram, I proposed to use **MDCT spectrogram** as the generation target, which is real-valued and phase-aware. It can be seen as the "DCT" version of STFT. More importantly, you can converted MDCT spectrogram back to raw waveform immediately *without using any Vocoder or Griffin-Lim algorithm*.
-<p align='center'>  
-  <img src='imgs/result.png' width='400'/>
-</p>
 
 ## pix2pixHD for spectrograms generation
 This repo is based on [official pix2pixHD implementation](https://github.com/NVIDIA/pix2pixHD). I did not modify the backbone network and keep it as original. However, since it is proposed for image generation and some of them are not suitable for audio spectrograms, some code is deprecated, such as Encoder network, VGG loss and image pre-processing (scale, rotate...).
